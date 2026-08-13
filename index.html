@@ -433,6 +433,53 @@
   }
   .rdQuick button:active{background:rgba(255,255,255,.1)}
 
+  /* ── 비상상황 모드 ── */
+  .tbtn.em{border-color:rgba(255,122,100,.55); color:#FF7A64}
+  .tbtn.em.on{background:var(--red); border-color:var(--red); color:#fff; animation:emPulse 1.2s infinite}
+  @keyframes emPulse{0%,100%{opacity:1}50%{opacity:.72}}
+  #emBanner{
+    position:absolute; top:0; left:0; right:0; z-index:40;
+    display:flex; align-items:center; gap:10px; padding:9px 14px;
+    background:var(--red); color:#fff; cursor:pointer;
+    font-weight:800; font-size:13.5px; animation:emPulse 1.2s infinite;
+  }
+  #emBanner[hidden]{display:none}
+  #emBanner .grow{flex:1}
+  #emElapsed{
+    font-family:ui-monospace,Consolas,monospace; font-variant-numeric:tabular-nums;
+    font-size:15px; font-weight:800;
+  }
+  #emRelease{
+    border:1.5px solid rgba(255,255,255,.6); background:transparent; color:#fff;
+    border-radius:99px; padding:4px 13px; font-weight:800; font-size:12px;
+  }
+  #emRelease.arm{background:#fff; color:var(--red)}
+  .stage.emg::after{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:35;
+    box-shadow:inset 0 0 0 4px var(--red); animation:emPulse 1.2s infinite;
+  }
+  #emModal{
+    position:fixed; inset:0; z-index:85; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.55);
+  }
+  #emModal[hidden]{display:none}
+  .emCard{width:min(680px,96vw); max-height:90vh}
+  .emCard h3{color:#FF7A64}
+  .emDeclare{display:flex; gap:8px; flex-wrap:wrap}
+  .emDeclare button{
+    flex:1 1 200px; border:none; border-radius:12px; padding:15px 14px;
+    background:var(--red); color:#fff; font-weight:800; font-size:14.5px;
+    box-shadow:0 4px 14px rgba(224,67,45,.35);
+  }
+  .emDeclare button:active{filter:brightness(.9)}
+  .emDeclare button.sub{background:#B4530F}
+  #emSteps{flex:1; min-height:0; overflow-y:auto; scrollbar-width:thin}
+  .emStep{
+    padding:7px 8px; font-size:12.5px; font-weight:600; line-height:1.45; color:var(--ink-hi);
+    display:flex; gap:8px;
+  }
+  .emStep::before{content:"›"; color:#FF7A64; font-weight:800}
+
   /* ── 출동대 프리셋 모달 ── */
   #presetModal{
     position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
@@ -544,9 +591,10 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 1.13</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 1.14</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
+  <button class="tbtn em" id="emBtn">비상</button>
   <button class="tbtn" id="boardsBtn">목록</button>
   <button class="tbtn" id="prioBtn" aria-expanded="true">우선순위</button>
   <button class="tbtn" id="laneBtn" aria-expanded="false">상태</button>
@@ -586,6 +634,13 @@
     </div>
     <div class="hint">두 손가락 화면 이동/확대 · 말 탭=편집 · 패널: 오른쪽 끝으로 끌면 사이드바 도킹</div>
     <div id="dockHint"></div>
+    <div id="emBanner" hidden>
+      <span>🚨</span>
+      <span id="emBannerText"></span>
+      <span class="grow"></span>
+      <span id="emElapsed">00:00</span>
+      <button id="emRelease">해제</button>
+    </div>
     <section class="panel" id="prioPanel" aria-label="우선순위">
       <div class="phead"><h2>우선순위</h2><button class="hideBtn" data-panel="prio">숨기기</button></div>
       <div class="body">
@@ -659,6 +714,23 @@
       <span class="grow"></span>
       <button class="btn" id="chipCancel">취소</button>
       <button class="btn primary" id="chipSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="emModal" hidden>
+  <div class="chipCard emCard">
+    <h3>비상상황</h3>
+    <p class="presetSub">선언하면 시각과 함께 기록에 남고, 해제할 때까지 화면에 경보가 표시됩니다</p>
+    <div class="emDeclare">
+      <button id="emDec1">🚨 긴급탈출 접수 (대원고립)</button>
+      <button id="emDec2" class="sub">⚠️ 붕괴위험 — 전원 철수</button>
+    </div>
+    <div id="emSteps"></div>
+    <div class="chipActions">
+      <button class="btn danger" id="emClear" hidden>비상 해제</button>
+      <span class="grow"></span>
+      <button class="btn" id="emClose">닫기</button>
     </div>
   </div>
 </div>
@@ -1935,6 +2007,119 @@
   });
   renderRdTabs(); renderRdList();
 
+  /* ── 비상상황 모드 (SOP 109 긴급탈출 · SOP 204 대원고립 · SSG 9 RIT) ── */
+  var EM_STEPS=[
+    {t:"지휘관 — 긴급탈출 대응 (SOP 109)", items:[
+      "\"긴급탈출\" 3회 송신 접수 = 비상상황 (위험지역 출동대가 3회 교신 무응답이어도 동일)",
+      "송신 대원 보고 청취: 누가 / 무엇을(원인) / 어디에(위치·주변에 보이는 것) / 벗어나는 데 필요한 것",
+      "고립대원에게 도움 정보 송신: 침착 유도·호흡법·무선연결 유지·필요시 PASS 작동",
+      "신속하게 구출팀 투입 — 우선 고립 대원이 소속된 출동대를 구출에 활용",
+      "전 출동대 전파: 상황 내용 + 전 출동대 무선 침묵 요구 + 고립대원이 요청한 필요 자원",
+      "상황실 복명복창 확인",
+      "구출작전 직접 지휘 또는 긴급탈출 상황이 발생한 단위대장에게 위임·지원",
+      "구출 완료 시 상황실에 비상통신 해제 통보, 상황평가 후 활동계획 재수립"]},
+    {t:"고립 대원 행동요령 (SOP 204)", items:[
+      "현 위치·출입구 방향·낙하물·붕괴 우려 확인",
+      "공기호흡기 잔압·랜턴 조도·무전기 감도 확인, 호흡 조절로 사용시간 연장",
+      "탈출방향: 호스 커플링 수나사 쪽 / 빛·신선한 공기 유입 방향 / 사이렌·경광등 방향",
+      "고립사실 알리기: 무전·큰 소리·PASS 작동·쇠막대 등으로 벽을 규칙적으로 두드림",
+      "벽에 닿으면 한 쪽 방향을 정해 일직선으로 포복 이동",
+      "소방호스 발견 시 진입로 방향으로 잡고 탈출"]},
+    {t:"RIT 운영 (SSG 9)", items:[
+      "현장도착 즉시 현장안전점검관·RIT 대원 통해 현장 위험성평가 실시",
+      "RIT로 지정된 대원에게 구출 임무 외 다른 임무 부여 금지",
+      "RIT는 비상탈출로(비상구·창문)·사다리 설치 위치 사전 확보, 즉시 투입 태세 유지",
+      "대응단계 상향 등 필요시 추가 RIT 지정 후 상황실 전파",
+      "대원고립 발생 즉시 가용인력·장비 총동원 신속 구조"]}
+  ];
+  var emState=(SAVED&&SAVED.em)||null;   /* {t:유형, ts:epoch, at:"HH:mm:ss"} */
+  var emBtn=document.getElementById("emBtn");
+  var emModal=document.getElementById("emModal");
+  var emBanner=document.getElementById("emBanner");
+  var emBannerText=document.getElementById("emBannerText");
+  var emElapsedEl=document.getElementById("emElapsed");
+  var emStepsEl=document.getElementById("emSteps");
+  var emClear=document.getElementById("emClear");
+  var emRelease=document.getElementById("emRelease");
+
+  function emElapsedText(){
+    var s=Math.max(0,Math.floor((Date.now()-emState.ts)/1000));
+    var m=Math.floor(s/60); s=s%60;
+    var h=Math.floor(m/60); m=m%60;
+    return (h?h+":":"")+pad(m)+":"+pad(s);
+  }
+  function applyEm(){
+    var on=!!emState;
+    stage.classList.toggle("emg",on);
+    emBanner.hidden=!on;
+    emBtn.classList.toggle("on",on);
+    emClear.hidden=!on;
+    if(on){
+      emBannerText.textContent=emState.t+" — "+emState.at+" 선언";
+      emElapsedEl.textContent=emElapsedText();
+    }
+  }
+  setInterval(function(){ if(emState) emElapsedEl.textContent=emElapsedText(); },1000);
+
+  /* 절차 카드 (첫 카드만 기본 펼침) */
+  (function(){
+    var open={0:1};
+    EM_STEPS.forEach(function(sec,i){
+      var box=document.createElement("div");
+      box.className="ckPhase"+(open[i]?" open":"");
+      var head=document.createElement("div"); head.className="ckPhaseHead";
+      var h4=document.createElement("h4"); h4.textContent=sec.t;
+      var chev=document.createElement("span"); chev.className="chev"; chev.textContent="▶";
+      head.appendChild(h4); head.appendChild(chev);
+      head.addEventListener("click",function(){ box.classList.toggle("open"); });
+      var itemsEl=document.createElement("div"); itemsEl.className="ckItems";
+      sec.items.forEach(function(text){
+        var d=document.createElement("div"); d.className="emStep";
+        var s=document.createElement("span"); s.textContent=text;
+        d.appendChild(s);
+        itemsEl.appendChild(d);
+      });
+      box.appendChild(head); box.appendChild(itemsEl);
+      emStepsEl.appendChild(box);
+    });
+  })();
+
+  function openEm(){ emModal.hidden=false; }
+  function closeEm(){ emModal.hidden=true; }
+  emBtn.addEventListener("click",openEm);
+  document.getElementById("emClose").addEventListener("click",closeEm);
+  emModal.addEventListener("pointerdown",function(e){ if(e.target===emModal) closeEm(); });
+  emBanner.addEventListener("click",function(e){
+    if(e.target===emRelease) return;
+    openEm();
+  });
+  function declareEm(t){
+    emState={t:t, ts:Date.now(), at:now()};
+    log("🚨 비상상황 선언: "+t);
+    applyEm(); scheduleSave();
+  }
+  document.getElementById("emDec1").addEventListener("click",function(){ declareEm("긴급탈출 접수 (대원고립)"); });
+  document.getElementById("emDec2").addEventListener("click",function(){ declareEm("붕괴위험 — 전원 철수"); });
+  function bindEmRelease(btn,label){
+    var timer=null;
+    function reset(){ btn.classList.remove("arm"); btn.textContent=label; }
+    btn.addEventListener("click",function(e){
+      e.stopPropagation();
+      if(!emState) return;
+      if(btn.classList.contains("arm")){
+        clearTimeout(timer); reset();
+        log("비상상황 해제: "+emState.t+" (경과 "+emElapsedText()+")");
+        emState=null; applyEm(); scheduleSave();
+      }else{
+        btn.classList.add("arm"); btn.textContent="확인?";
+        timer=setTimeout(reset,2500);
+      }
+    });
+  }
+  bindEmRelease(emRelease,"해제");
+  bindEmRelease(emClear,"비상 해제");
+  applyEm();
+
   /* ── 출동대 프리셋 모달 ── */
   var presetModal=document.getElementById("presetModal");
   var stTabs=document.getElementById("stTabs");
@@ -2057,7 +2242,7 @@
     });
     return {
       v:1, incident:incidentEl.textContent, view:view, strokes:strokes,
-      lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd, rdc:rdState,
+      lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd, rdc:rdState, em:emState,
       pp:geo(panels.prio.panel), lp:geo(panels.lane.panel), kp:geo(panels.ck.panel),
       rp:geo(panels.rd.panel),
       log:{ o:!logCard.hidden, w:parseFloat(logSide.style.flexBasis)||300,
