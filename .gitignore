@@ -1,0 +1,7 @@
+# 세션 로그·내부 문서·개인 파일은 저장소에 올리지 않는다
+conversation.md
+context.md
+CLAUDE.md
+앱제작계획.md
+*.log
+KakaoTalk_*.jpg
