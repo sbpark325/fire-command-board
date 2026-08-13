@@ -401,6 +401,38 @@
   .ckItem.on .box{background:var(--amber); border-color:var(--amber)}
   .ckItem.on{color:var(--ink-lo)}
 
+  /* ── 표준 무전문 패널 ── */
+  .rdItem{
+    margin:3px 2px; padding:10px 12px; border-radius:10px; cursor:pointer;
+    background:rgba(255,255,255,.04); border:1px solid var(--edge);
+    font-size:12.5px; font-weight:600; line-height:1.45; color:var(--ink-hi);
+    transition:background .12s,border-color .12s;
+  }
+  .rdItem:active{background:rgba(255,255,255,.09); border-color:var(--edge-2)}
+  .rdItem .sent{
+    display:inline-block; margin-left:6px; padding:1px 7px; border-radius:99px;
+    background:var(--amber); color:var(--amber-ink); font-size:10.5px; font-weight:800;
+    vertical-align:1px;
+  }
+  #radioModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #radioModal[hidden]{display:none}
+  .radioCard{width:min(560px,94vw); max-height:86vh}
+  #rdText{
+    min-height:90px; max-height:38vh; overflow-y:auto; scrollbar-width:thin;
+    background:var(--bg2); border:1px solid var(--edge-2); border-radius:9px;
+    padding:11px 12px; font-size:14px; font-weight:600; line-height:1.55; color:var(--ink-hi);
+  }
+  #rdText:focus{outline:none; border-color:var(--amber)}
+  .rdQuick{display:flex; gap:6px; overflow-x:auto; padding:2px; scrollbar-width:thin}
+  .rdQuick button{
+    flex:0 0 auto; border:1px solid var(--edge-2); background:var(--bg2); color:var(--ink-hi);
+    border-radius:99px; padding:6px 11px; font-weight:700; font-size:12px;
+  }
+  .rdQuick button:active{background:rgba(255,255,255,.1)}
+
   /* ── 출동대 프리셋 모달 ── */
   #presetModal{
     position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
@@ -512,13 +544,14 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 1.12</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 1.13</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn" id="boardsBtn">목록</button>
   <button class="tbtn" id="prioBtn" aria-expanded="true">우선순위</button>
   <button class="tbtn" id="laneBtn" aria-expanded="false">상태</button>
   <button class="tbtn" id="ckBtn" aria-expanded="false">체크리스트</button>
+  <button class="tbtn" id="rdBtn" aria-expanded="false">무전문</button>
   <button class="tbtn" id="logBtn" aria-expanded="true">기록 <span class="n" id="logCount">0</span></button>
 </header>
 
@@ -581,6 +614,14 @@
       </div>
     </section>
 
+    <section class="panel" id="rdPanel" aria-label="표준 무전문" hidden>
+      <div class="phead"><h2>표준 무전문</h2><button class="hideBtn" data-panel="rd">숨기기</button></div>
+      <div class="body">
+        <div class="ckTabs" id="rdTabs"></div>
+        <div id="rdList"></div>
+      </div>
+    </section>
+
 </main>
 
 <div class="splitter" id="splitter" aria-label="기록 폭 조절"></div>
@@ -618,6 +659,20 @@
       <span class="grow"></span>
       <button class="btn" id="chipCancel">취소</button>
       <button class="btn primary" id="chipSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="radioModal" hidden>
+  <div class="chipCard radioCard">
+    <h3>무전 기록</h3>
+    <p class="presetSub">칩을 탭하면 ○○ 자리가 채워집니다. 문안을 다듬은 뒤 "기록"을 누르면 시간과 함께 기록에 남습니다</p>
+    <div id="rdText" contenteditable="true" spellcheck="false"></div>
+    <div class="rdQuick" id="rdQuick"></div>
+    <div class="chipActions">
+      <span class="grow"></span>
+      <button class="btn" id="rdCancel">취소</button>
+      <button class="btn primary" id="rdLog">기록</button>
     </div>
   </div>
 </div>
@@ -774,6 +829,72 @@
       {t:"복귀", items:["사진 정리","조사보고서 초안 작성","화재조사 보고서 작성","자료 전산 등록"]}
     ]}
   ];
+  /* ── 표준 무전문 (출처: 지휘팀장 무전 체크리스트 예문, 선착대장 현장지휘 체크리스트('26.1.5) 무전 시나리오)
+        ○○/○ 자리는 무전 기록 모달에서 출동대명·방면·숫자 칩으로 치환 ── */
+  var RADIOS = [
+    {id:"cmd", name:"지휘팀장", phases:[
+      {t:"출동 중", items:[
+        "○○, 여기 지휘팀장. ○○가 선착대임. 현장도착 즉시 화점 위치, 연소범위, 인명위험 여부 포함해 상황보고 바람.",
+        "○○, 여기 지휘팀장. 구조대상자 다수 가능성 있음. 인명구조 최우선으로 하되 현장평가 후 활동 바람.",
+        "상황실, 여기 중부지휘. 한전, 경찰, 가스 등 유관기관 출동조치 바람.",
+        "선착대장은 현장 인근 소화전 활용하고 급수 가능 여부 전파 바람."]},
+      {t:"현장도착 직후", items:[
+        "중부지휘 현장도착. 선착대장은 현재 상황보고 바람. 현 시간부로 중부지휘가 현장지휘 실시함.",
+        "○○ 팀장은 ○○ 단위지휘관으로 지정함. 소속대 지휘 바람.",
+        "조사1은 대원안전·위험요소 파악 및 방재실 위치 확인, 조사2는 관계인 확보 바람."]},
+      {t:"최초 상황평가", items:[
+        "상황실, 여기 중부지휘. 대상은 ○○이며 ○층에서 화염과 연기 다량 관측됨. 상층부로 연소 확대 중. 추가 지원 요청함.",
+        "상황실, 여기 중부지휘. 연소확대 및 인명피해 우려 커 ○○ 발령 검토 바람.",
+        "각 출동대에 알림. 현재 전략은 공격전략으로 인명구조 및 화재진압 병행함.",
+        "특수차 진입 가능함. 고가차와 굴절차는 지정 위치에 신속히 부서 바람."]},
+      {t:"지휘체계 구축", items:[
+        "건물 전면을 A방면, 시계방향으로 B, C, D방면으로 지정함.",
+        "조사2는 B, C, D방면 이동하여 위험요소 및 상황 확인 후 보고 바람.",
+        "○○ 주출입구 전방을 자원대기소로 지정함.",
+        "○○를 RIT로 지정함. 자원대기소에서 대기 바람.",
+        "○○장은 임시의료소 설치 후 사상자 관리 바람.",
+        "○○장을 ○층 단위지휘관으로 지정함."]},
+      {t:"무전망 분리", items:[
+        "현 시간부로 무전망 분리 운영함. 단위지휘관·상황실·현장지휘관은 지휘망 사용, 여타 출동대는 작전망 사용 바람.",
+        "무선 혼선 시 전 출동대는 무기침묵 유지. 활동사항은 단위지휘관에게 우선 보고 바람."]},
+      {t:"급수·안전관리", items:[
+        "○○ 1선 펌프차와 물탱크차는 ○○ 중심으로 운영함.",
+        "○○는 소화전 점령 후 ○○ 급수 지원 바람.",
+        "조사1은 통제선 설치, 소방활동구역 확보, 전기 차단 및 가스 위험 확인 바람.",
+        "조사1은 붕괴, 낙하물, 폭발위험 확인 후 즉시 보고 바람.",
+        "○○는 교대조로 운영 예정이니 직전대기 바람.",
+        "○○는 열화상카메라 및 문개방 장비 지참 후 ○층 진입, 인명검색 최우선으로 활동 바람."]},
+      {t:"재평가·전략 변경", items:[
+        "상황실, 여기 중부지휘. 현재 ○층에서 ○층으로 연소 확대 중임. 구조대상자 추가 발생 가능성 있어 ○○ 상향 검토 바람.",
+        "각 출동대에 알림. 현 시간부로 공격전략에서 방어전략으로 전환함.",
+        "건물 내부 진입대는 즉시 철수 후 지정 집결지점으로 이동 바람.",
+        "각 단위지휘관은 철수 완료 후 인원점검 결과를 즉시 보고 바람."]},
+      {t:"완진 절차", items:[
+        "각 단위지휘관은 2차 인명검색 실시 후 결과 보고 바람.",
+        "지휘팀장은 현장확인 실시함.",
+        "각 단위지휘관은 상황판단회의를 위해 ○○ 직전대기소로 집결 바람.",
+        "상황실, 여기 중부지휘. 현장확인 및 상황판단회의 결과 현 시간부로 완진 선언함.",
+        "○○는 잔불감시 실시, 그 외 출동대는 현장정리 후 순차 복귀 바람."]},
+      {t:"비상상황", items:[
+        "각 출동대에 알림. 붕괴위험 증가. 내부 진입대는 즉시 철수, 지정 집결지점으로 이동 바람.",
+        "긴급무전. 긴급탈출 접수. 일반무전 통제함. RIT 즉시 투입 준비 바람.",
+        "해당 단위지휘관은 요구조대원 최종 위치, 임무, 진입경로 즉시 보고 바람."]}
+    ]},
+    {id:"first", name:"선착대장", phases:[
+      {t:"출동단계", items:[
+        "상황실, 여기 ○○. 추가신고 접수되는지? 관계인 확보하여 인명대피 유도토록 안내하고, 소방용수 위치 및 접근가능 여부 확인 바람.",
+        "○○ 출동 중. 멀리서 검은 연기 관측되며 ○○ 교차로에 차량정체 극심. 현 상황 유관기관 통보 바람(경찰, 한전 등)."]},
+      {t:"현장도착", items:[
+        "○○ 현장도착. 지금부터 ○○장이 현장 지휘하겠음.",
+        "내화구조 ○○건물 ○층 중 ○층에서 화염분출, ○층에 다량의 검은 연기 관측. 현재까지 육안으로 보이는 인명구조 상황 없음.",
+        "○○는 도로변 주출입구를 A방면으로 지정, 공격전략으로 수관 전개해서 화점층 진입. 화재진압 및 인명검색 실시하고 ○○장은 전진 지휘하겠음."]},
+      {t:"현장대응", items:[
+        "펌프차 ○개대, 구조대 ○개대, 구급차 ○개대 추가출동 바람.",
+        "○○ 펌프를 A방면 1선펌프, ○○ 물탱크를 중요탱크차로 지정 운영함. 후착대 ○○ 펌프차는 B방면 진입하여 1선펌프 수행하고, 굴절차는 A방면 입구에 부서 바람.",
+        "추가로 비발 중인 분대는 회차 가능한 인근 대로변에 대기1단계 준수하고 대기, 도착보고 후 임무부여 받기 바람.",
+        "상황실, 여기 선착대장. 현재 ○층에서 ○층으로 연소확대 중이며, 위험물은 없는 것으로 파악됨. 내부 구조대상자는 ○명 추정됨."]}
+    ]}
+  ];
   var LANES = ["현장도착","직전대기","RIT·용수지원","구급"];
   var CHIP_COLORS = ["blue","red","orange","green","purple","teal","gray"];
   var CHIP = 56, HALF = CHIP/2;
@@ -877,6 +998,7 @@
     prio:{btn:document.getElementById("prioBtn"), panel:document.getElementById("prioPanel")},
     lane:{btn:document.getElementById("laneBtn"), panel:document.getElementById("lanePanel")},
     ck  :{btn:document.getElementById("ckBtn"),   panel:document.getElementById("ckPanel")},
+    rd  :{btn:document.getElementById("rdBtn"),   panel:document.getElementById("rdPanel")},
     log :{btn:document.getElementById("logBtn"),  panel:logCard}
   };
   var topZ=30;
@@ -994,7 +1116,7 @@
     var w=p.offsetWidth, h=p.offsetHeight;
     var W=stage.clientWidth, H=stage.clientHeight;
     var xs=[MARGIN, W-w-MARGIN], ys=[MARGIN, H-h-MARGIN];
-    ["prio","lane","ck"].forEach(function(k){
+    ["prio","lane","ck","rd"].forEach(function(k){
       var o=panels[k].panel;
       if(o===p||o.hidden||o.classList.contains("docked")) return;
       xs.push(o.offsetLeft, o.offsetLeft+o.offsetWidth-w,
@@ -1122,23 +1244,28 @@
     });
   }
   var sw0=stage.getBoundingClientRect().width;
-  var pp=SAVED&&SAVED.pp, lp=SAVED&&SAVED.lp, kp=SAVED&&SAVED.kp, lg=SAVED&&SAVED.log;
+  var pp=SAVED&&SAVED.pp, lp=SAVED&&SAVED.lp, kp=SAVED&&SAVED.kp,
+      rp=SAVED&&SAVED.rp, lg=SAVED&&SAVED.log;
   if(lg&&lg.w) logSide.style.flexBasis=lg.w+"px";
   initPanel("prio", pp?pp.x:Math.max(12,sw0-312), pp?pp.y:12, pp?pp.w:300, pp?pp.h:240);
   initPanel("lane", lp?lp.x:Math.max(12,sw0-636), lp?lp.y:12, lp?lp.w:310, lp?lp.h:430);
   initPanel("ck",   kp?kp.x:12, kp?kp.y:12, kp?kp.w:330, kp?kp.h:470);
-  /* 기본: 우선순위 포스트잇 + 기록 사이드바 표시, 상태·체크리스트 숨김 */
+  initPanel("rd",   rp?rp.x:64, rp?rp.y:56, rp?rp.w:360, rp?rp.h:470);
+  /* 기본: 우선순위 포스트잇 + 기록 사이드바 표시, 상태·체크리스트·무전문 숨김 */
   setPanel("prio", pp?!!pp.o:true);
   setPanel("lane", lp?!!lp.o:false);
   setPanel("ck",   kp?!!kp.o:false);
+  setPanel("rd",   rp?!!rp.o:false);
   setPanel("log",  lg?!!lg.o:true);
   /* 도킹 상태·도크 내 크기 비율 복원 */
   if(pp&&pp.k) dock(panels.prio.panel);
   if(lp&&lp.k) dock(panels.lane.panel);
   if(kp&&kp.k) dock(panels.ck.panel);
+  if(rp&&rp.k) dock(panels.rd.panel);
   if(pp&&pp.g) panels.prio.panel.style.flex=pp.g+" 1 0px";
   if(lp&&lp.g) panels.lane.panel.style.flex=lp.g+" 1 0px";
   if(kp&&kp.g) panels.ck.panel.style.flex=kp.g+" 1 0px";
+  if(rp&&rp.g) panels.rd.panel.style.flex=rp.g+" 1 0px";
   if(lg&&lg.g) logCard.style.flex=lg.g+" 1 0px";
 
   /* ── 상태 레인: 생성/추가/삭제 ── */
@@ -1696,6 +1823,118 @@
   }
   renderCkTabs(); renderCkList();
 
+  /* ── 표준 무전문: 단계별 예문 → 탭하면 치환·기록 모달 ── */
+  var rdState={};   /* roleId → {항목 flat index: 송신 횟수} */
+  RADIOS.forEach(function(r){ rdState[r.id]={}; });
+  if(SAVED&&SAVED.rdc){
+    Object.keys(SAVED.rdc).forEach(function(rid){
+      if(!rdState[rid]) return;
+      Object.keys(SAVED.rdc[rid]||{}).forEach(function(i){ rdState[rid][i]=SAVED.rdc[rid][i]; });
+    });
+  }
+  var rdRole=0;
+  var rdOpenMap={};
+  RADIOS.forEach(function(r){ rdOpenMap[r.id]={0:1}; });
+  var rdTabsEl=document.getElementById("rdTabs");
+  var rdListEl=document.getElementById("rdList");
+  var radioModal=document.getElementById("radioModal");
+  var rdText=document.getElementById("rdText");
+  var rdQuick=document.getElementById("rdQuick");
+  var rdCtx=null;   /* 열려 있는 무전문: {roleIdx, flatIdx, badgeEl, itemEl} */
+
+  function renderRdTabs(){
+    rdTabsEl.textContent="";
+    RADIOS.forEach(function(r,i){
+      var b=document.createElement("button");
+      b.className="ckTab";
+      b.textContent=r.name;
+      b.setAttribute("aria-pressed", i===rdRole?"true":"false");
+      b.addEventListener("click",function(){ rdRole=i; renderRdTabs(); renderRdList(); });
+      rdTabsEl.appendChild(b);
+    });
+  }
+  function rdBadge(el,n){
+    var old=el.querySelector(".sent");
+    if(old) old.remove();
+    if(n>0){
+      var s=document.createElement("span"); s.className="sent";
+      s.textContent=n+"회";
+      el.appendChild(s);
+    }
+  }
+  function renderRdList(){
+    rdListEl.textContent="";
+    var role=RADIOS[rdRole], state=rdState[role.id], openMap=rdOpenMap[role.id];
+    var flat=0;
+    role.phases.forEach(function(ph,pi){
+      var box=document.createElement("div");
+      box.className="ckPhase"+(openMap[pi]?" open":"");
+      var head=document.createElement("div"); head.className="ckPhaseHead";
+      var h4=document.createElement("h4"); h4.textContent=ph.t;
+      var chev=document.createElement("span"); chev.className="chev"; chev.textContent="▶";
+      head.appendChild(h4); head.appendChild(chev);
+      head.addEventListener("click",function(){
+        if(openMap[pi]) delete openMap[pi]; else openMap[pi]=1;
+        box.classList.toggle("open");
+      });
+      var itemsEl=document.createElement("div"); itemsEl.className="ckItems";
+      ph.items.forEach(function(text){
+        var idx=flat++;
+        var row=document.createElement("div"); row.className="rdItem";
+        var tx=document.createElement("span"); tx.textContent=text;
+        row.appendChild(tx);
+        rdBadge(row, state[idx]||0);
+        row.addEventListener("click",function(){
+          rdCtx={roleIdx:rdRole, flatIdx:idx, itemEl:row};
+          rdText.textContent=text;
+          buildRdQuick();
+          radioModal.hidden=false;
+        });
+        itemsEl.appendChild(row);
+      });
+      box.appendChild(head); box.appendChild(itemsEl);
+      rdListEl.appendChild(box);
+    });
+  }
+  /* 치환 칩: 보드의 출동대명 + 방면/대응단계/숫자 */
+  function buildRdQuick(){
+    rdQuick.textContent="";
+    var names=[];
+    document.querySelectorAll(".chip").forEach(function(c){
+      if(names.indexOf(c.dataset.name)<0) names.push(c.dataset.name);
+    });
+    var tokens=names.concat(["A방면","B방면","C방면","D방면","대응1단계","대응2단계","대응3단계",
+                             "1","2","3","4","5","6","7","8","9"]);
+    tokens.forEach(function(tk){
+      var b=document.createElement("button");
+      b.textContent=tk;
+      b.addEventListener("click",function(){
+        var t=rdText.textContent;
+        if(t.indexOf("○○")>-1) rdText.textContent=t.replace("○○",tk);
+        else if(t.indexOf("○")>-1) rdText.textContent=t.replace("○",tk);
+      });
+      rdQuick.appendChild(b);
+    });
+  }
+  function closeRadio(){ radioModal.hidden=true; rdCtx=null; }
+  document.getElementById("rdCancel").addEventListener("click",closeRadio);
+  radioModal.addEventListener("pointerdown",function(e){
+    if(e.target===radioModal) closeRadio();
+  });
+  document.getElementById("rdLog").addEventListener("click",function(){
+    if(!rdCtx) return;
+    var text=rdText.textContent.trim();
+    if(!text){ rdText.focus(); return; }
+    var role=RADIOS[rdCtx.roleIdx];
+    log("무전 ["+role.name+"] "+text);
+    var st=rdState[role.id];
+    st[rdCtx.flatIdx]=(st[rdCtx.flatIdx]||0)+1;
+    rdBadge(rdCtx.itemEl, st[rdCtx.flatIdx]);
+    scheduleSave();
+    closeRadio();
+  });
+  renderRdTabs(); renderRdList();
+
   /* ── 출동대 프리셋 모달 ── */
   var presetModal=document.getElementById("presetModal");
   var stTabs=document.getElementById("stTabs");
@@ -1818,8 +2057,9 @@
     });
     return {
       v:1, incident:incidentEl.textContent, view:view, strokes:strokes,
-      lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd,
+      lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd, rdc:rdState,
       pp:geo(panels.prio.panel), lp:geo(panels.lane.panel), kp:geo(panels.ck.panel),
+      rp:geo(panels.rd.panel),
       log:{ o:!logCard.hidden, w:parseFloat(logSide.style.flexBasis)||300,
             g:parseFloat(logCard.style.flex)||0 }
     };
