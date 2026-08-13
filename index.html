@@ -360,6 +360,47 @@
   }
   #chipModal[hidden]{display:none}
 
+  /* ── 지휘 체크리스트 패널 ── */
+  .ckTabs{display:flex; gap:5px; margin-bottom:10px; flex-wrap:wrap}
+  .ckTab{
+    border:1px solid var(--edge-2); background:transparent; color:var(--ink-lo);
+    border-radius:99px; padding:6px 11px; font-weight:700; font-size:12px;
+    transition:background .12s,color .12s,border-color .12s;
+  }
+  .ckTab[aria-pressed="true"]{background:var(--amber); border-color:var(--amber); color:var(--amber-ink)}
+  .ckPhase{
+    background:var(--bg2); border:1px solid var(--edge); border-radius:12px;
+    margin-bottom:8px; overflow:hidden;
+  }
+  .ckPhaseHead{
+    display:flex; align-items:center; gap:8px; padding:10px 12px;
+    cursor:pointer; user-select:none; -webkit-user-select:none;
+  }
+  .ckPhaseHead h4{flex:1; margin:0; font-size:13.5px; font-weight:800; color:var(--ink-hi)}
+  .ckPhaseHead .cnt{
+    font-size:11.5px; font-weight:800; color:var(--amber);
+    font-variant-numeric:tabular-nums;
+  }
+  .ckPhaseHead .cnt.done{color:#5BC97B}
+  .ckPhaseHead .chev{color:var(--ink-lo); font-size:10px; transition:transform .15s}
+  .ckPhase.open .chev{transform:rotate(90deg)}
+  .ckItems{display:none; flex-direction:column; padding:0 8px 8px}
+  .ckPhase.open .ckItems{display:flex}
+  .ckItem{
+    display:flex; align-items:flex-start; gap:9px; padding:8px 6px; border-radius:8px;
+    cursor:pointer; font-size:12.5px; font-weight:600; color:var(--ink-hi); line-height:1.35;
+    user-select:none; -webkit-user-select:none;
+  }
+  .ckItem:active{background:rgba(255,255,255,.06)}
+  .ckItem .box{
+    flex:0 0 auto; width:17px; height:17px; margin-top:1px; border-radius:5px;
+    border:1.5px solid var(--edge-2); display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:800; color:var(--amber-ink);
+    transition:background .12s,border-color .12s;
+  }
+  .ckItem.on .box{background:var(--amber); border-color:var(--amber)}
+  .ckItem.on{color:var(--ink-lo)}
+
   /* ── 출동대 프리셋 모달 ── */
   #presetModal{
     position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
@@ -471,12 +512,13 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 1.11</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 1.12</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn" id="boardsBtn">목록</button>
   <button class="tbtn" id="prioBtn" aria-expanded="true">우선순위</button>
   <button class="tbtn" id="laneBtn" aria-expanded="false">상태</button>
+  <button class="tbtn" id="ckBtn" aria-expanded="false">체크리스트</button>
   <button class="tbtn" id="logBtn" aria-expanded="true">기록 <span class="n" id="logCount">0</span></button>
 </header>
 
@@ -528,6 +570,14 @@
       <div class="body">
         <div id="laneList"></div>
         <button id="addLane">＋ 레인 추가</button>
+      </div>
+    </section>
+
+    <section class="panel" id="ckPanel" aria-label="체크리스트" hidden>
+      <div class="phead"><h2>체크리스트</h2><button class="hideBtn" data-panel="ck">숨기기</button></div>
+      <div class="body">
+        <div class="ckTabs" id="ckTabs"></div>
+        <div id="ckList"></div>
       </div>
     </section>
 
@@ -658,6 +708,72 @@
   ];
   var COLOR_HEX = {blue:"#3B6BC9", red:"#D8493A", orange:"#F29A3C", green:"#3FA65B",
                    purple:"#8B5CD6", teal:"#2FA6A0", gray:"#8A949B"};
+
+  /* ── 지휘 체크리스트 (출처: 지휘팀장 무전 체크리스트, 선착대장 현장지휘 체크리스트('26.1.5),
+        지휘팀장 & 개인별 업무 체크리스트) ── */
+  var CHECKLISTS = [
+    {id:"cmd", name:"지휘팀장", phases:[
+      {t:"출동 중", items:[
+        "신고내용·대상물 특성·진입로·도로상황 확인","선착대장 활동전략 예측","후착대 대기장소 검토",
+        "특수차 부서 가능 공간 확인","소화전 위치·급수 가능 여부 확인","추가 소방력 필요성 검토",
+        "유관기관(경찰·한전·가스·시청) 출동 필요 판단","선착대장에게 상황보고 기준 전파",
+        "상황실에 대기장소·부서공간 확인 요청","소화전 위치 전파"]},
+      {t:"현장도착 직후", items:[
+        "지휘권 이양·현장지휘 선언","선착대 상황보고 접수","단위지휘관 지정",
+        "지휘팀 임무 부여 (안전담당·조사1·조사2·통신)","긴급구조지휘대 초기 운영"]},
+      {t:"최초 상황평가", items:[
+        "건물 구조·화점 위치 확인","화염·연기 상태 확인","연소 확대 방향 확인","구조대상자 유무 확인",
+        "인명구조 우선 여부 판단","공격/방어 전략 결정","대응단계 상향 여부 검토",
+        "특수차 진입 가능 여부 확인","상황실에 최초 상황보고","추가 소방력 요청·대응단계 발령 건의","전략 전파"]},
+      {t:"지휘체계 구축", items:[
+        "방면 지정 (A/B/C/D)","단위지휘관 지정·소속대 편성","자원대기소 지정","RIT 지정",
+        "임시의료소 설치 지시","사상자 관리체계 확인"]},
+      {t:"무전망·작전 운영", items:[
+        "지휘망/작전망 분리","무기침묵 기준 전파","현장 보고체계 통일",
+        "급수체계 지정 (펌프차·물탱크차 운영)","교대조 운영 계획 반영"]},
+      {t:"안전관리", items:[
+        "통제선 설치","소방활동구역 확보","전기 차단 확인","가스 위험 확인",
+        "붕괴·낙하물 위험 확인","내부진입대 안전관리","RIT 즉시 투입 준비"]},
+      {t:"재평가·전략 변경", items:[
+        "연소 확대 여부 확인","구조대상자 추가 여부 확인","대응단계 상향 검토",
+        "공격 ↔ 방어 전략 전환 판단","내부진입대 철수 여부 판단","단위지휘관별 인원점검 확인"]},
+      {t:"완진 절차", items:[
+        "초진 확인","2차 인명검색","현장확인","상황판단회의","완진 선언","잔불감시 지정","순차 복귀 조치"]},
+      {t:"비상상황", items:[
+        "긴급탈출 접수 시 일반무전 통제","붕괴위험 시 즉시 철수명령","요구조대원 위치 확인",
+        "집결지점 지정","인원점검 결과 확인"]}
+    ]},
+    {id:"first", name:"선착대장", phases:[
+      {t:"출동단계", items:[
+        "주요사고 정보 파악","관계인 확보","용수위치 파악","교통상황 전파","육안 관측사항 전파","유관기관 통보"]},
+      {t:"현장도착", items:[
+        "지휘권 선언 (무전)","최초 상황보고 (건물·구조대상자·방면·전략·지휘형태·활동)",
+        "전략 선언 (공격/방어/병행)·방면 지정"]},
+      {t:"현장대응", items:[
+        "추가 출동분대 요청 (필요시)","후착대 임무지정 (차량진입·특수차 부서위치)",
+        "1차·2차 인명검색","연소확대 여부·위험물 요소 파악"]}
+    ]},
+    {id:"safety", name:"안전점검관", phases:[
+      {t:"출동지령", items:["개인보호구(PPE) 착용 확인","안전장비 점검"]},
+      {t:"이동 중", items:["건축물 구조·위험물 확인","붕괴위험 검토"]},
+      {t:"현장도착", items:["위험구역 설정","진입·퇴출로 확인","안전매트·RIT 운영 확인"]},
+      {t:"초기대응", items:["붕괴·낙하·감전 위험 점검","소방용수 확보 확인"]},
+      {t:"대응단계 발령", items:["위험성 재평가","현장안전조치 권고","구조대 안전관리"]},
+      {t:"진압 안정화", items:["잔여 위험요인 확인","안전통제 유지"]},
+      {t:"진압 완료", items:["안전조치 해제 확인","위험요소 제거 확인"]},
+      {t:"복귀", items:["안전관리 결과 작성","안전관리 보고서 제출"]}
+    ]},
+    {id:"inv", name:"조사원", phases:[
+      {t:"출동지령", items:["카메라·드론·조사장비 준비","건축물 정보 조회"]},
+      {t:"이동 중", items:["건축물대장 조회","위험물·유해화학물질 정보 확인","출동차량 현황 확인"]},
+      {t:"현장도착", items:["화점 예상지 확인","현장사진 촬영","관계자 확보"]},
+      {t:"초기대응", items:["CCTV 확보","목격자 확보","연소확대 방향 기록"]},
+      {t:"대응단계 발령", items:["피해현황 작성","사진·영상 기록","인명·재산피해 정리"]},
+      {t:"진압 안정화", items:["조사자료 확보","증거물 위치 기록"]},
+      {t:"진압 완료", items:["화재조사 착수","증거물 확보"]},
+      {t:"복귀", items:["사진 정리","조사보고서 초안 작성","화재조사 보고서 작성","자료 전산 등록"]}
+    ]}
+  ];
   var LANES = ["현장도착","직전대기","RIT·용수지원","구급"];
   var CHIP_COLORS = ["blue","red","orange","green","purple","teal","gray"];
   var CHIP = 56, HALF = CHIP/2;
@@ -760,6 +876,7 @@
   var panels={
     prio:{btn:document.getElementById("prioBtn"), panel:document.getElementById("prioPanel")},
     lane:{btn:document.getElementById("laneBtn"), panel:document.getElementById("lanePanel")},
+    ck  :{btn:document.getElementById("ckBtn"),   panel:document.getElementById("ckPanel")},
     log :{btn:document.getElementById("logBtn"),  panel:logCard}
   };
   var topZ=30;
@@ -877,7 +994,7 @@
     var w=p.offsetWidth, h=p.offsetHeight;
     var W=stage.clientWidth, H=stage.clientHeight;
     var xs=[MARGIN, W-w-MARGIN], ys=[MARGIN, H-h-MARGIN];
-    ["prio","lane"].forEach(function(k){
+    ["prio","lane","ck"].forEach(function(k){
       var o=panels[k].panel;
       if(o===p||o.hidden||o.classList.contains("docked")) return;
       xs.push(o.offsetLeft, o.offsetLeft+o.offsetWidth-w,
@@ -1005,19 +1122,23 @@
     });
   }
   var sw0=stage.getBoundingClientRect().width;
-  var pp=SAVED&&SAVED.pp, lp=SAVED&&SAVED.lp, lg=SAVED&&SAVED.log;
+  var pp=SAVED&&SAVED.pp, lp=SAVED&&SAVED.lp, kp=SAVED&&SAVED.kp, lg=SAVED&&SAVED.log;
   if(lg&&lg.w) logSide.style.flexBasis=lg.w+"px";
   initPanel("prio", pp?pp.x:Math.max(12,sw0-312), pp?pp.y:12, pp?pp.w:300, pp?pp.h:240);
   initPanel("lane", lp?lp.x:Math.max(12,sw0-636), lp?lp.y:12, lp?lp.w:310, lp?lp.h:430);
-  /* 기본: 우선순위 포스트잇 + 기록 사이드바 표시, 상태 숨김 */
+  initPanel("ck",   kp?kp.x:12, kp?kp.y:12, kp?kp.w:330, kp?kp.h:470);
+  /* 기본: 우선순위 포스트잇 + 기록 사이드바 표시, 상태·체크리스트 숨김 */
   setPanel("prio", pp?!!pp.o:true);
   setPanel("lane", lp?!!lp.o:false);
+  setPanel("ck",   kp?!!kp.o:false);
   setPanel("log",  lg?!!lg.o:true);
   /* 도킹 상태·도크 내 크기 비율 복원 */
   if(pp&&pp.k) dock(panels.prio.panel);
   if(lp&&lp.k) dock(panels.lane.panel);
+  if(kp&&kp.k) dock(panels.ck.panel);
   if(pp&&pp.g) panels.prio.panel.style.flex=pp.g+" 1 0px";
   if(lp&&lp.g) panels.lane.panel.style.flex=lp.g+" 1 0px";
+  if(kp&&kp.g) panels.ck.panel.style.flex=kp.g+" 1 0px";
   if(lg&&lg.g) logCard.style.flex=lg.g+" 1 0px";
 
   /* ── 상태 레인: 생성/추가/삭제 ── */
@@ -1498,6 +1619,83 @@
     }
   });
 
+  /* ── 지휘 체크리스트: 역할 탭 + 단계 접기 + 체크 시 자동 시각 기록 ── */
+  var ckState={};   /* roleId → {항목 flat index: 1} */
+  CHECKLISTS.forEach(function(r){ ckState[r.id]={}; });
+  if(SAVED&&SAVED.ckd){
+    Object.keys(SAVED.ckd).forEach(function(rid){
+      if(!ckState[rid]) return;
+      (SAVED.ckd[rid]||[]).forEach(function(i){ ckState[rid][i]=1; });
+    });
+  }
+  var ckRole=0;
+  var ckOpenMap={};  /* roleId → {단계 index: 1} — 접기 상태 (세션 한정, 저장 안 함) */
+  CHECKLISTS.forEach(function(r){ ckOpenMap[r.id]={0:1}; });
+  var ckTabsEl=document.getElementById("ckTabs");
+  var ckListEl=document.getElementById("ckList");
+
+  function renderCkTabs(){
+    ckTabsEl.textContent="";
+    CHECKLISTS.forEach(function(r,i){
+      var b=document.createElement("button");
+      b.className="ckTab";
+      b.textContent=r.name;
+      b.setAttribute("aria-pressed", i===ckRole?"true":"false");
+      b.addEventListener("click",function(){ ckRole=i; renderCkTabs(); renderCkList(); });
+      ckTabsEl.appendChild(b);
+    });
+  }
+  function renderCkList(){
+    ckListEl.textContent="";
+    var role=CHECKLISTS[ckRole], state=ckState[role.id], openMap=ckOpenMap[role.id];
+    var flat=0;
+    role.phases.forEach(function(ph,pi){
+      var box=document.createElement("div");
+      box.className="ckPhase"+(openMap[pi]?" open":"");
+      var head=document.createElement("div"); head.className="ckPhaseHead";
+      var h4=document.createElement("h4"); h4.textContent=ph.t;
+      var cnt=document.createElement("span"); cnt.className="cnt";
+      var chev=document.createElement("span"); chev.className="chev"; chev.textContent="▶";
+      head.appendChild(h4); head.appendChild(cnt); head.appendChild(chev);
+      head.addEventListener("click",function(){
+        if(openMap[pi]) delete openMap[pi]; else openMap[pi]=1;
+        box.classList.toggle("open");
+      });
+      var itemsEl=document.createElement("div"); itemsEl.className="ckItems";
+      var phDone=0;
+      ph.items.forEach(function(text){
+        var idx=flat++;
+        var row=document.createElement("div");
+        row.className="ckItem"+(state[idx]?" on":"");
+        if(state[idx]) phDone++;
+        var bx=document.createElement("span"); bx.className="box";
+        bx.textContent=state[idx]?"✓":"";
+        var tx=document.createElement("span"); tx.textContent=text;
+        row.appendChild(bx); row.appendChild(tx);
+        row.addEventListener("click",function(){
+          var on=!state[idx];
+          if(on){ state[idx]=1; log("✓ ["+role.name+"] "+text); }
+          else{ delete state[idx]; log("체크 해제 ["+role.name+"] "+text); }
+          row.classList.toggle("on",on);
+          bx.textContent=on?"✓":"";
+          updateCnt();
+          scheduleSave();
+        });
+        itemsEl.appendChild(row);
+      });
+      function updateCnt(){
+        var done=itemsEl.querySelectorAll(".ckItem.on").length;
+        cnt.textContent=done+"/"+ph.items.length;
+        cnt.classList.toggle("done", done===ph.items.length);
+      }
+      cnt.textContent=phDone+"/"+ph.items.length;
+      cnt.classList.toggle("done", phDone===ph.items.length);
+      box.appendChild(head); box.appendChild(itemsEl);
+      ckListEl.appendChild(box);
+    });
+  }
+  renderCkTabs(); renderCkList();
+
   /* ── 출동대 프리셋 모달 ── */
   var presetModal=document.getElementById("presetModal");
   var stTabs=document.getElementById("stTabs");
@@ -1614,10 +1812,14 @@
                o:!p.hidden, k:p.classList.contains("docked")?1:0,
                g:parseFloat(p.style.flex)||0 };
     }
+    var ckd={};
+    Object.keys(ckState).forEach(function(rid){
+      ckd[rid]=Object.keys(ckState[rid]).map(Number);
+    });
     return {
       v:1, incident:incidentEl.textContent, view:view, strokes:strokes,
-      lanes:lanes, chips:chips, prio:prio, logs:logData,
-      pp:geo(panels.prio.panel), lp:geo(panels.lane.panel),
+      lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd,
+      pp:geo(panels.prio.panel), lp:geo(panels.lane.panel), kp:geo(panels.ck.panel),
       log:{ o:!logCard.hidden, w:parseFloat(logSide.style.flexBasis)||300,
             g:parseFloat(logCard.style.flex)||0 }
     };
