@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>현장지휘 보드</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101315">
@@ -318,6 +319,8 @@
   .chip.red,.swatch.red{background:linear-gradient(165deg,#D8493A,#9E2117)}
   .chip.orange,.swatch.orange{background:linear-gradient(165deg,#F29A3C,#C56C06)}
   .chip.green,.swatch.green{background:linear-gradient(165deg,#3FA65B,#1E7233)}
+  .chip.purple,.swatch.purple{background:linear-gradient(165deg,#8B5CD6,#57339B)}
+  .chip.teal,.swatch.teal{background:linear-gradient(165deg,#2FA6A0,#0E6E69)}
   .chip.gray,.swatch.gray{background:linear-gradient(165deg,#8A949B,#535C63)}
   .chip.lift{
     pointer-events:none !important; z-index:60; position:relative; cursor:grabbing;
@@ -356,6 +359,40 @@
     background:rgba(0,0,0,.45);
   }
   #chipModal[hidden]{display:none}
+
+  /* ── 출동대 프리셋 모달 ── */
+  #presetModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #presetModal[hidden]{display:none}
+  .presetCard{width:min(640px,94vw); max-height:86vh}
+  .presetSub{margin:-6px 0 0; font-size:12px; color:var(--ink-lo); font-weight:600}
+  .stTabs{display:flex; gap:6px; flex-wrap:wrap}
+  .stTab{
+    border:1px solid var(--edge-2); background:transparent; color:var(--ink-hi);
+    border-radius:99px; padding:7px 12px; font-weight:700; font-size:12.5px;
+    display:flex; align-items:center; gap:7px;
+  }
+  .stTab .dot{width:10px; height:10px; border-radius:50%; box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+  .stTab[aria-pressed="true"]{background:rgba(255,255,255,.1); box-shadow:inset 0 0 0 1.5px var(--amber)}
+  .puGrid{
+    flex:1; min-height:120px; max-height:44vh; overflow-y:auto; scrollbar-width:thin;
+    display:flex; flex-wrap:wrap; gap:7px; align-content:flex-start; padding:2px;
+  }
+  .puBtn{
+    border:1px solid var(--edge-2); background:var(--bg2); color:var(--ink-hi);
+    border-radius:10px; padding:8px 12px; font-weight:700; font-size:13px;
+    transition:background .12s,color .12s,border-color .12s;
+  }
+  .puBtn[aria-pressed="true"]{background:var(--amber); border-color:var(--amber); color:var(--amber-ink)}
+  .puBtn.have{opacity:.38; text-decoration:line-through}
+  #presetBtn{
+    flex:0 0 auto; height:44px; border-radius:99px; padding:0 16px;
+    border:1.5px dashed var(--edge-2); background:transparent; color:var(--amber);
+    font-weight:700; font-size:13px; transition:border-color .15s;
+  }
+  #presetBtn:hover{border-color:var(--amber)}
 
   /* ── 보드 목록 페이지 ── */
   #homePage{
@@ -434,7 +471,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 1.10</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 1.11</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn" id="boardsBtn">목록</button>
@@ -509,6 +546,7 @@
 <footer class="tray">
   <div class="trayLabel"><span class="t">미배치</span><span class="c" id="trayCount">0</span></div>
   <button id="addChip" aria-label="말 추가">＋</button>
+  <button id="presetBtn">프리셋</button>
   <div class="laneBody" id="tray" data-lane="미배치"></div>
 </footer>
 
@@ -521,6 +559,8 @@
       <button class="swatch red" data-c="red" aria-pressed="false" aria-label="빨강"></button>
       <button class="swatch orange" data-c="orange" aria-pressed="false" aria-label="주황"></button>
       <button class="swatch green" data-c="green" aria-pressed="false" aria-label="초록"></button>
+      <button class="swatch purple" data-c="purple" aria-pressed="false" aria-label="보라"></button>
+      <button class="swatch teal" data-c="teal" aria-pressed="false" aria-label="청록"></button>
       <button class="swatch gray" data-c="gray" aria-pressed="false" aria-label="회색"></button>
     </div>
     <div class="chipActions">
@@ -528,6 +568,21 @@
       <span class="grow"></span>
       <button class="btn" id="chipCancel">취소</button>
       <button class="btn primary" id="chipSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="presetModal" hidden>
+  <div class="chipCard presetCard">
+    <h3>출동대 프리셋</h3>
+    <p class="presetSub">관서를 고르고 출동대를 탭해 선택 — 이미 보드에 있는 출동대는 제외됩니다</p>
+    <div class="stTabs" id="stTabs"></div>
+    <div class="puGrid" id="puGrid"></div>
+    <div class="chipActions">
+      <button class="btn" id="puAll">서 전체 선택</button>
+      <span class="grow"></span>
+      <button class="btn" id="puClose">닫기</button>
+      <button class="btn primary" id="puAdd">추가 <span id="puN">0</span></button>
     </div>
   </div>
 </div>
@@ -545,17 +600,66 @@
 (function(){
   "use strict";
 
-  /* ── 데이터 (추후 편집: 출동대 명칭·색상·기본 레인) ── */
-  var UNITS = [
-    ["병영P","blue"],["병영T","blue"],["병영구급","blue"],
-    ["유곡P","blue"],["유곡T","blue"],["유곡구급","blue"],["유곡굴절","blue"],
-    ["성남P","blue"],["태화P","blue"],["태화사다리","blue"],["중부구조","blue"],
-    ["삼산P","red"],["삼산T","red"],["신정P","red"],
-    ["여천P","red"],["여천T","red"],["남부구조","red"],
-    ["송정P","orange"]
+  /* ── 출동대 마스터 (2026-07-29 울산소방본부 차량현황 기준)
+     접미사: P=펌프 T=물탱크 구급/음압=구급차 구조=구조대 사다리/굴절=고가차
+             화학=화학차 조연=조명배연 약제=소화약제탱크 무인=무인파괴방수 지휘=지휘차 ── */
+  var PRESETS = [
+    {st:"중부소방서", c:"blue", units:[
+      "중부지휘","중부구조",
+      "병영P","병영T","병영구급1","병영구급2",
+      "성남P","성남구급",
+      "유곡P","유곡T","유곡사다리","유곡굴절","유곡구급","유곡음압",
+      "태화P1","태화P2","태화사다리","태화구급1","태화구급2"
+    ]},
+    {st:"남부소방서", c:"red", units:[
+      "남부지휘","남부구조",
+      "삼산P","삼산T","삼산사다리","삼산굴절","삼산화학","삼산조연","삼산구급1","삼산구급2",
+      "신정P1","신정P2","신정구급1","신정구급2",
+      "무거P","무거T","무거사다리","무거구급",
+      "옥동P","옥동T","옥동약제","옥동구급",
+      "여천P","여천T","여천무인","여천구급",
+      "장생포P1","장생포P2","장생포화학",
+      "공단P","공단T","공단화학","공단약제","공단구급"
+    ]},
+    {st:"동부소방서", c:"orange", units:[
+      "동부지휘","동부구조",
+      "화암P","화암T","화암사다리","화암굴절","화암화학","화암조연","화암무인","화암구급1","화암구급2","화암음압",
+      "전하P","전하T","전하구급",
+      "화정P1","화정P2","화정구급"
+    ]},
+    {st:"북부소방서", c:"green", units:[
+      "북부지휘","북부구조",
+      "송정P","송정T","송정사다리","송정굴절","송정조연","송정무인","송정구급","송정음압",
+      "농소P","농소T","농소구급",
+      "강동P1","강동P2","강동T","강동구급",
+      "매곡P","매곡T","매곡구급",
+      "염포P1","염포P2","염포T","염포화학","염포구급"
+    ]},
+    {st:"남울주소방서", c:"purple", units:[
+      "남울주지휘","남울주구조",
+      "온산P","온산사다리","온산화학","온산약제","온산조연","온산무인","온산구급1","온산구급2",
+      "화산P","화산T","화산굴절","화산화학","화산구급","화산음압",
+      "온양P1","온양P2","온양T","온양구급",
+      "웅촌P","웅촌T","웅촌화학","웅촌구급",
+      "청량P","청량구급",
+      "서생P","서생구급"
+    ]},
+    {st:"서울주소방서", c:"teal", units:[
+      "서울주지휘","서울주구조",
+      "언양P1","언양P2","언양P3","언양P4","언양T","언양굴절","언양화학","언양구급","언양음압",
+      "범서P1","범서P2","범서T","범서사다리","범서구급",
+      "상북P1","상북P2","상북P3","상북구급",
+      "두서P","두서구급",
+      "삼동P","삼동구급"
+    ]},
+    {st:"소방본부", c:"gray", units:[
+      "통제단지휘","본부지휘","특수단구조","특수단P1","특수단P2","특수단P3"
+    ]}
   ];
+  var COLOR_HEX = {blue:"#3B6BC9", red:"#D8493A", orange:"#F29A3C", green:"#3FA65B",
+                   purple:"#8B5CD6", teal:"#2FA6A0", gray:"#8A949B"};
   var LANES = ["현장도착","직전대기","RIT·용수지원","구급"];
-  var CHIP_COLORS = ["blue","red","orange","green","gray"];
+  var CHIP_COLORS = ["blue","red","orange","green","purple","teal","gray"];
   var CHIP = 56, HALF = CHIP/2;
   var PAPER = "#F6F7F4";
 
@@ -1179,11 +1283,11 @@
   }
   function renderChipLabel(chip,name){
     chip.textContent="";
-    /* "병영P" → 병영/P, "태화사다리" → 태화/사다리 처럼 소속+차종 2단 표기 */
-    var m=name.match(/^(.{1,4}?)(P|T|구급|구조|굴절|사다리|펌프|탱크)$/);
+    /* "병영P" → 병영/P, "태화사다리" → 태화/사다리 처럼 소속+차종(+번호) 2단 표기 */
+    var m=name.match(/^(.{1,4}?)(P|T|구급|구조|굴절|사다리|펌프|탱크|지휘|화학|조연|약제|무인|음압)(\d*)$/);
     if(m){
       var nm=document.createElement("span"); nm.className="nm"; nm.textContent=m[1];
-      var ty=document.createElement("span"); ty.className="ty"; ty.textContent=m[2];
+      var ty=document.createElement("span"); ty.className="ty"; ty.textContent=m[2]+(m[3]||"");
       chip.appendChild(nm); chip.appendChild(ty);
     }else{
       var solo=document.createElement("span"); solo.className="nm solo"; solo.textContent=name;
@@ -1208,9 +1312,8 @@
         tray.appendChild(chip);
       }
     });
-  }else{
-    UNITS.forEach(function(u){ tray.appendChild(createChip(u[0],u[1])); });
   }
+  /* 새 보드는 빈 트레이로 시작 — 프리셋 모달이 자동으로 열림 (아래 참조) */
 
   function chipZone(chip){
     if(chip.parentElement===planLayer) return "평면도";
@@ -1395,6 +1498,89 @@
     }
   });
 
+  /* ── 출동대 프리셋 모달 ── */
+  var presetModal=document.getElementById("presetModal");
+  var stTabs=document.getElementById("stTabs");
+  var puGrid=document.getElementById("puGrid");
+  var puAdd=document.getElementById("puAdd");
+  var puAll=document.getElementById("puAll");
+  var puN=document.getElementById("puN");
+  var curSt=0;          /* 현재 선택된 관서 탭 */
+  var puSel={};         /* 선택된 출동대: 이름 → 색상 */
+
+  function existingNames(){
+    var set={};
+    document.querySelectorAll(".chip").forEach(function(c){ set[c.dataset.name]=1; });
+    return set;
+  }
+  function updatePuN(){ puN.textContent=Object.keys(puSel).length; }
+  function renderStTabs(){
+    stTabs.textContent="";
+    PRESETS.forEach(function(p,i){
+      var b=document.createElement("button");
+      b.className="stTab";
+      b.setAttribute("aria-pressed", i===curSt?"true":"false");
+      var dot=document.createElement("span"); dot.className="dot";
+      dot.style.background=COLOR_HEX[p.c];
+      b.appendChild(dot);
+      b.appendChild(document.createTextNode(p.st));
+      b.addEventListener("click",function(){ curSt=i; renderStTabs(); renderPuGrid(); });
+      stTabs.appendChild(b);
+    });
+  }
+  function renderPuGrid(){
+    puGrid.textContent="";
+    var have=existingNames(), p=PRESETS[curSt];
+    p.units.forEach(function(name){
+      var b=document.createElement("button");
+      b.className="puBtn";
+      b.textContent=name;
+      if(have[name]){
+        b.classList.add("have"); b.disabled=true;
+      }else{
+        b.setAttribute("aria-pressed", puSel[name]?"true":"false");
+        b.addEventListener("click",function(){
+          if(puSel[name]){ delete puSel[name]; b.setAttribute("aria-pressed","false"); }
+          else{ puSel[name]=p.c; b.setAttribute("aria-pressed","true"); }
+          updatePuN();
+        });
+      }
+      puGrid.appendChild(b);
+    });
+    updatePuN();
+  }
+  function openPreset(){
+    puSel={}; curSt=0;
+    renderStTabs(); renderPuGrid();
+    presetModal.hidden=false;
+  }
+  function closePreset(){ presetModal.hidden=true; }
+  puAll.addEventListener("click",function(){
+    /* 현재 관서의 선택 가능한 출동대 전체 토글 */
+    var have=existingNames(), p=PRESETS[curSt];
+    var free=p.units.filter(function(n){ return !have[n]; });
+    var allSel=free.length>0 && free.every(function(n){ return puSel[n]; });
+    free.forEach(function(n){
+      if(allSel) delete puSel[n]; else puSel[n]=p.c;
+    });
+    renderPuGrid();
+  });
+  puAdd.addEventListener("click",function(){
+    var have=existingNames(), n=0;
+    Object.keys(puSel).forEach(function(name){
+      if(have[name]) return;
+      tray.appendChild(createChip(name,puSel[name]));
+      n++;
+    });
+    if(n){ log("프리셋 추가: 출동대 "+n+"개"); refreshCounts(); scheduleSave(); }
+    closePreset();
+  });
+  document.getElementById("puClose").addEventListener("click",closePreset);
+  presetModal.addEventListener("pointerdown",function(e){
+    if(e.target===presetModal) closePreset();
+  });
+  document.getElementById("presetBtn").addEventListener("click",openPreset);
+
   /* ── 사건명·우선순위 복원 + 입력 시 저장 ── */
   var incidentEl=document.querySelector(".incident");
   if(SAVED&&typeof SAVED.incident==="string") incidentEl.textContent=SAVED.incident;
@@ -1544,6 +1730,9 @@
   }
   refreshCounts();
   log(SAVED ? "보드 복원 (자동 저장 켜짐)" : "새 보드 시작 (자동 저장 켜짐)");
+
+  /* 새 보드(저장 이력 없음)면 출동대 프리셋 선택부터 시작 */
+  if(!SAVED) openPreset();
 
   /* ── PWA: 서비스워커 등록 (자체 호스팅에서만 — 아티팩트/파일 열기에선 조용히 건너뜀) ── */
   if("serviceWorker" in navigator
