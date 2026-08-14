@@ -468,6 +468,7 @@
   }
   #syncJoinCode:focus{outline:none; border-color:var(--amber)}
   #syncErr{color:#FF7A64}
+  #syncErr.ok{color:#5BC97B}
 
   /* ── 주소 검색 모달 ── */
   #searchModal{
@@ -693,7 +694,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.14</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.15</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -883,6 +884,7 @@
       <p class="presetSub" id="syncErr" hidden></p>
     </div>
     <div class="chipActions">
+      <button class="btn" id="syncCopy">내 보드로 사본 저장</button>
       <button class="btn danger" id="syncStop" hidden>공유 해제(이 기기)</button>
       <span class="grow"></span>
       <button class="btn" id="syncClose">닫기</button>
@@ -3067,7 +3069,8 @@
   var syncModal=document.getElementById("syncModal");
   var syncBtnEl=document.getElementById("syncBtn");
   var syncErr=document.getElementById("syncErr");
-  function showSyncErr(msg){ syncErr.textContent=msg; syncErr.hidden=false; }
+  function showSyncErr(msg){ syncErr.classList.remove("ok"); syncErr.textContent=msg; syncErr.hidden=false; }
+  function showSyncOk(msg){ syncErr.classList.add("ok"); syncErr.textContent=msg; syncErr.hidden=false; }
   function refreshSyncStatus(){
     var code=shareCode();
     var el=document.getElementById("syncState");
@@ -3121,6 +3124,21 @@
           showSyncErr("공유 실패 — 네트워크를 확인하세요"+(e&&e.code?" ("+e.code+")":""));
         });
     });
+  });
+  /* 현재 보드를 공유 연결 없는 독립 사본으로 저장 */
+  document.getElementById("syncCopy").addEventListener("click",function(){
+    saveState();
+    var st=serialize();
+    var name=(incidentEl.textContent.trim()||"이름 없는 보드")+" (사본)";
+    st.incident=name;
+    var nb={id:genId(), name:name, created:Date.now(), updated:Date.now()};   /* share 없음 */
+    try{
+      localStorage.setItem(boardKey(nb.id), JSON.stringify(st));
+      boardIndex.push(nb); saveIndex();
+      showSyncOk("✓ 사본이 보드 목록에 저장되었습니다: "+name);
+    }catch(e){
+      showSyncErr("사본 저장 실패 — 저장 공간을 확인하세요");
+    }
   });
   document.getElementById("syncStop").addEventListener("click",function(){
     if(syncUnsub){ syncUnsub(); syncUnsub=null; }
