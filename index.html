@@ -255,6 +255,7 @@
 
   /* ── 말 (플랫 카드 + 차종 심볼) ── */
   .chip{
+    position:relative;
     width:56px; height:56px; border-radius:12px; flex:0 0 auto;
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
     touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; color:#fff;
@@ -282,6 +283,16 @@
     pointer-events:none !important; z-index:60; position:relative; cursor:grabbing;
     box-shadow:0 14px 28px rgba(0,0,0,.45);
   }
+  /* 말 우상단 X: 트레이=즉시 삭제, 평면도=트레이로 회수 (상태 레인에선 숨김) */
+  .chip .x{
+    position:absolute; top:-7px; right:-7px; width:19px; height:19px;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    border-radius:50%; border:1px solid rgba(255,255,255,.3);
+    background:#1A1F23; color:#fff; font-size:13px; line-height:1; font-weight:700;
+    z-index:2;
+  }
+  .chip .x:active{background:var(--red); border-color:var(--red)}
+  #laneList .laneBody .chip .x{display:none}
   #planLayer .chip.lift{position:absolute}
 
   /* ── 하단 트레이 (도크) ── */
@@ -600,7 +611,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.3</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.4</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1581,6 +1592,26 @@
     lb.className="lb"+(key&&TYPE_ICONS[key] ? (name.length>=6?" small":"") : " solo");
     lb.textContent=name;
     chip.appendChild(lb);
+    /* 우상단 X: 트레이에선 즉시 삭제, 평면도에선 트레이로 회수 */
+    var x=document.createElement("button");
+    x.className="x"; x.textContent="×"; x.setAttribute("aria-label","삭제 또는 회수");
+    x.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+    x.addEventListener("click",function(e){
+      e.stopPropagation();
+      chipXAction(chip);
+    });
+    chip.appendChild(x);
+  }
+  function chipXAction(chip){
+    if(chip.parentElement===planLayer){
+      placeInFlow(chip, tray);
+      log(chip.dataset.name+": 평면도 → 미배치");
+    }else{
+      log("말 삭제: "+chip.dataset.name+" ("+chipZone(chip)+")");
+      chip.remove();
+    }
+    refreshCounts();
+    scheduleSave();
   }
   function createChip(name,color){
     var chip=document.createElement("div");
