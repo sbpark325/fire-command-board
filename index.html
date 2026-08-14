@@ -251,34 +251,34 @@
     color:var(--amber); font-size:11.5px; padding-top:1px;
   }
 
-  /* ── 말 (스쿼클 토큰) ── */
+  /* ── 말 (플랫 카드 + 차종 심볼) ── */
   .chip{
-    width:56px; height:56px; border-radius:19px; flex:0 0 auto;
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    width:56px; height:56px; border-radius:12px; flex:0 0 auto;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
     touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; color:#fff;
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.17), inset 0 -14px 20px rgba(0,0,0,.16),
-               0 2px 6px rgba(0,0,0,.28);
+    border:1px solid rgba(0,0,0,.28);
+    box-shadow:0 1.5px 4px rgba(0,0,0,.25);
     transition:box-shadow .15s var(--ease);
   }
-  .chip span{pointer-events:none; text-shadow:0 1px 2px rgba(0,0,0,.35)}
-  .chip .nm{font-size:13px; font-weight:800; line-height:1; letter-spacing:-.01em}
-  .chip .nm.solo{
-    font-size:10.5px; line-height:1.2; text-align:center; padding:0 5px; word-break:keep-all;
+  .chip svg{width:21px; height:21px; flex:0 0 auto; pointer-events:none}
+  .chip .lb{
+    pointer-events:none; max-width:100%; overflow:hidden;
+    font-size:10.5px; font-weight:800; line-height:1.1; letter-spacing:-.02em;
+    text-align:center; padding:0 3px; word-break:keep-all; white-space:nowrap;
+    text-shadow:0 1px 1.5px rgba(0,0,0,.3);
   }
-  .chip .ty{
-    font-size:12.5px; font-weight:800; line-height:1; letter-spacing:.08em;
-  }
-  .chip.blue,.swatch.blue{background:linear-gradient(165deg,#3B6BC9,#173F8F)}
-  .chip.red,.swatch.red{background:linear-gradient(165deg,#D8493A,#9E2117)}
-  .chip.orange,.swatch.orange{background:linear-gradient(165deg,#F29A3C,#C56C06)}
-  .chip.green,.swatch.green{background:linear-gradient(165deg,#3FA65B,#1E7233)}
-  .chip.purple,.swatch.purple{background:linear-gradient(165deg,#8B5CD6,#57339B)}
-  .chip.teal,.swatch.teal{background:linear-gradient(165deg,#2FA6A0,#0E6E69)}
-  .chip.gray,.swatch.gray{background:linear-gradient(165deg,#8A949B,#535C63)}
+  .chip .lb.small{font-size:9px}
+  .chip .lb.solo{font-size:11px; line-height:1.2; white-space:normal}
+  .chip.blue,.swatch.blue{background:#3157AE}
+  .chip.red,.swatch.red{background:#C23B2C}
+  .chip.orange,.swatch.orange{background:#D9821F}
+  .chip.green,.swatch.green{background:#2E8B4E}
+  .chip.purple,.swatch.purple{background:#7A4EC5}
+  .chip.teal,.swatch.teal{background:#1E8C86}
+  .chip.gray,.swatch.gray{background:#6C7680}
   .chip.lift{
     pointer-events:none !important; z-index:60; position:relative; cursor:grabbing;
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.22), inset 0 -14px 20px rgba(0,0,0,.16),
-               0 14px 28px rgba(0,0,0,.45);
+    box-shadow:0 14px 28px rgba(0,0,0,.45);
   }
   #planLayer .chip.lift{position:absolute}
 
@@ -544,8 +544,8 @@
   #chipName:focus{outline:none; border-color:var(--amber)}
   .swatches{display:flex; gap:10px}
   .swatch{
-    width:36px; height:36px; border-radius:12px; border:none; padding:0;
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.17), inset 0 -8px 12px rgba(0,0,0,.16);
+    width:36px; height:36px; border-radius:12px; padding:0;
+    border:1px solid rgba(0,0,0,.28);
   }
   .swatch[aria-pressed="true"]{outline:2px solid var(--amber); outline-offset:3px}
   .chipActions{display:flex; gap:8px; align-items:center}
@@ -564,7 +564,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.0</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.1</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1490,18 +1490,37 @@
       if(chip.classList.contains(CHIP_COLORS[i])) return CHIP_COLORS[i];
     return "blue";
   }
+  /* 차종별 심볼 (24×24 스트로크 아이콘) */
+  var TYPE_ICONS={
+    "지휘":'<path d="M6 21V4"/><path d="M6 4h12l-3 4 3 4H6"/>',
+    "P":'<path d="M12 3.5c3.2 4.2 5.5 7 5.5 10a5.5 5.5 0 1 1-11 0c0-3 2.3-5.8 5.5-10z"/>',
+    "T":'<rect x="5" y="6" width="14" height="13" rx="3"/><path d="M5 10.5h14"/>',
+    "구급":'<path d="M12 5v14M5 12h14" stroke-width="3.4"/>',
+    "음압":'<circle cx="12" cy="12" r="8.5"/><path d="M12 8v8M8 12h8" stroke-width="2.6"/>',
+    "구조":'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5"/>',
+    "사다리":'<path d="M8 3v18M16 3v18M8 8h8M8 13h8M8 18h8"/>',
+    "굴절":'<path d="M4 20h7M7 20 12 10l7-3"/><circle cx="12" cy="10" r="1.8"/><circle cx="19" cy="7" r="1.8"/>',
+    "화학":'<path d="M9.5 3h5M10.5 3v5.5L5.8 18a2 2 0 0 0 1.8 3h8.8a2 2 0 0 0 1.8-3L13.5 8.5V3"/>',
+    "조연":'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+    "약제":'<rect x="9" y="8" width="6" height="12" rx="2.5"/><path d="M12 8V5M10 5h4M9.5 9.5 5.5 5.5"/>',
+    "무인":'<path d="M12 21v-7"/><circle cx="12" cy="11" r="2"/><path d="M7.5 7.5a6.5 6.5 0 0 1 9 0M4.8 4.8a10.5 10.5 0 0 1 14.4 0"/>'
+  };
   function renderChipLabel(chip,name){
     chip.textContent="";
-    /* "병영P" → 병영/P, "태화사다리" → 태화/사다리 처럼 소속+차종(+번호) 2단 표기 */
+    /* 차종 접미사를 인식해 심볼 + 전체 이름으로 표기 ("태화P1" → 물방울 아이콘/태화P1) */
     var m=name.match(/^(.{1,4}?)(P|T|구급|구조|굴절|사다리|펌프|탱크|지휘|화학|조연|약제|무인|음압)(\d*)$/);
-    if(m){
-      var nm=document.createElement("span"); nm.className="nm"; nm.textContent=m[1];
-      var ty=document.createElement("span"); ty.className="ty"; ty.textContent=m[2]+(m[3]||"");
-      chip.appendChild(nm); chip.appendChild(ty);
-    }else{
-      var solo=document.createElement("span"); solo.className="nm solo"; solo.textContent=name;
-      chip.appendChild(solo);
+    var key=m?m[2]:null;
+    if(key==="펌프") key="P";
+    if(key==="탱크") key="T";
+    if(key&&TYPE_ICONS[key]){
+      chip.insertAdjacentHTML("afterbegin",
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '+
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+TYPE_ICONS[key]+'</svg>');
     }
+    var lb=document.createElement("span");
+    lb.className="lb"+(key&&TYPE_ICONS[key] ? (name.length>=6?" small":"") : " solo");
+    lb.textContent=name;
+    chip.appendChild(lb);
   }
   function createChip(name,color){
     var chip=document.createElement("div");
