@@ -440,6 +440,25 @@
   #syncJoinCode:focus{outline:none; border-color:var(--amber)}
   #syncErr{color:#FF7A64}
 
+  /* ── 주소 검색 모달 ── */
+  #searchModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #searchModal[hidden]{display:none}
+  #searchInput{
+    flex:1; min-width:0; background:var(--bg2); border:1px solid var(--edge-2); border-radius:9px;
+    padding:11px 12px; color:var(--ink-hi); font:inherit; font-weight:600; font-size:14px;
+  }
+  #searchInput:focus{outline:none; border-color:var(--amber)}
+  #searchResults{display:flex; flex-direction:column; gap:6px; max-height:42vh; overflow-y:auto; scrollbar-width:thin}
+  .searchItem{
+    border:1px solid var(--edge); background:var(--bg2); color:var(--ink-hi);
+    border-radius:9px; padding:9px 11px; font-size:12.5px; font-weight:600;
+    text-align:left; line-height:1.4;
+  }
+  .searchItem:active{border-color:var(--amber)}
+
   /* ── 비상상황 모드 ── */
   .tbtn.em{border-color:rgba(255,122,100,.55); color:#FF7A64}
   .tbtn.em.on{background:var(--red); border-color:var(--red); color:#fff; animation:emPulse 1.2s infinite}
@@ -632,7 +651,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.9</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.10</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -659,6 +678,7 @@
       <button id="zoomOut" aria-label="축소">－</button>
       <button id="mapBtn" aria-label="지도 배경" aria-pressed="false">지도</button>
       <button id="gpsBtn" aria-label="현 위치로 이동" hidden>◎</button>
+      <button id="searchBtn" aria-label="주소 검색" hidden>🔍</button>
     </div>
     <div id="osmCredit" hidden>© OpenStreetMap contributors</div>
 
@@ -770,6 +790,22 @@
       <span class="grow"></span>
       <button class="btn" id="chipCancel">취소</button>
       <button class="btn primary" id="chipSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="searchModal" hidden>
+  <div class="chipCard">
+    <h3>주소 검색</h3>
+    <div class="syncJoinRow">
+      <input id="searchInput" placeholder="주소 또는 장소 (예: 울산 남구 삼산동)" spellcheck="false">
+      <button class="btn primary" id="searchGo">검색</button>
+    </div>
+    <div id="searchResults"></div>
+    <p class="presetSub" id="searchMsg" hidden></p>
+    <div class="chipActions">
+      <span class="grow"></span>
+      <button class="btn" id="searchClose">닫기</button>
     </div>
   </div>
 </div>
@@ -1412,11 +1448,13 @@
   /* ── 지도 배경 토글 + 현 위치 이동 ── */
   var mapBtn=document.getElementById("mapBtn");
   var gpsBtn=document.getElementById("gpsBtn");
+  var searchBtn=document.getElementById("searchBtn");
   var osmCredit=document.getElementById("osmCredit");
   function updateMapUi(){
     var on=!!(geo&&geo.on);
     mapBtn.setAttribute("aria-pressed", on?"true":"false");
     gpsBtn.hidden=!on;
+    searchBtn.hidden=!on;
     osmCredit.hidden=!on;
     redraw();
   }
@@ -1453,6 +1491,50 @@
     navigator.geolocation.getCurrentPosition(
       function(p){ centerOn(p.coords.latitude, p.coords.longitude); },
       function(){}, {enableHighAccuracy:true, timeout:6000});
+  });
+
+  /* 주소 검색 (OSM Nominatim — 온라인 필요) */
+  var searchModal=document.getElementById("searchModal");
+  var searchInput=document.getElementById("searchInput");
+  var searchResults=document.getElementById("searchResults");
+  var searchMsg=document.getElementById("searchMsg");
+  function showSearchMsg(t){ searchMsg.textContent=t; searchMsg.hidden=false; }
+  searchBtn.addEventListener("click",function(){
+    searchResults.textContent=""; searchMsg.hidden=true; searchInput.value="";
+    searchModal.hidden=false;
+    searchInput.focus();
+  });
+  document.getElementById("searchClose").addEventListener("click",function(){ searchModal.hidden=true; });
+  searchModal.addEventListener("pointerdown",function(e){ if(e.target===searchModal) searchModal.hidden=true; });
+  function doSearch(){
+    var q=searchInput.value.trim();
+    if(!q){ searchInput.focus(); return; }
+    showSearchMsg("검색 중…");
+    searchResults.textContent="";
+    fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=ko&countrycodes=kr&q="
+          +encodeURIComponent(q))
+      .then(function(r){ return r.json(); })
+      .then(function(list){
+        searchMsg.hidden=true;
+        if(!list.length){ showSearchMsg("검색 결과가 없습니다 — 주소를 더 자세히 입력해 보세요"); return; }
+        list.forEach(function(it){
+          var b=document.createElement("button");
+          b.className="searchItem";
+          b.textContent=it.display_name;
+          b.addEventListener("click",function(){
+            view.s=1;   /* 건물 단위 배율로 */
+            centerOn(parseFloat(it.lat), parseFloat(it.lon));
+            log("지도 이동: "+it.display_name.split(",")[0]);
+            searchModal.hidden=true;
+          });
+          searchResults.appendChild(b);
+        });
+      })
+      .catch(function(){ showSearchMsg("검색 실패 — 인터넷 연결을 확인하세요"); });
+  }
+  document.getElementById("searchGo").addEventListener("click",doSearch);
+  searchInput.addEventListener("keydown",function(e){
+    if(e.key==="Enter"){ e.preventDefault(); doSearch(); }
   });
   /* 주의: 초기 updateMapUi()는 캔버스·strokes 초기화 이후(resize 직후)에 호출한다 —
      여기서 호출하면 redraw가 미정의 strokes를 참조해 부트 전체가 죽는다 */
