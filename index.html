@@ -386,6 +386,26 @@
   }
   .rdQuick button:active{background:rgba(255,255,255,.1)}
 
+  /* ── 다기기 공유 모달 ── */
+  #syncModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #syncModal[hidden]{display:none}
+  .syncCode{
+    text-align:center; font-family:ui-monospace,Consolas,monospace;
+    font-size:38px; font-weight:800; letter-spacing:.28em; color:var(--amber);
+    padding:10px 0 4px; user-select:text; -webkit-user-select:text;
+  }
+  .syncJoinRow{display:flex; gap:8px}
+  #syncJoinCode{
+    flex:1; min-width:0; background:var(--bg2); border:1px solid var(--edge-2); border-radius:9px;
+    padding:11px 12px; color:var(--ink-hi); font:inherit; font-weight:800; font-size:16px;
+    letter-spacing:.18em; text-transform:uppercase;
+  }
+  #syncJoinCode:focus{outline:none; border-color:var(--amber)}
+  #syncErr{color:#FF7A64}
+
   /* ── 비상상황 모드 ── */
   .tbtn.em{border-color:rgba(255,122,100,.55); color:#FF7A64}
   .tbtn.em.on{background:var(--red); border-color:var(--red); color:#fff; animation:emPulse 1.2s infinite}
@@ -544,10 +564,11 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 1.15</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.0</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
+  <button class="tbtn" id="syncBtn" aria-expanded="false">공유</button>
   <button class="tbtn" id="boardsBtn">목록</button>
   <button class="tbtn" id="prioBtn" aria-expanded="true">우선순위</button>
   <button class="tbtn" id="laneBtn" aria-expanded="false">상태</button>
@@ -675,6 +696,31 @@
   </div>
 </div>
 
+<div id="syncModal" hidden>
+  <div class="chipCard">
+    <h3>다기기 공유</h3>
+    <p class="presetSub" id="syncNoCfg" hidden>이 빌드에는 동기화 서버 설정이 없어 공유를 사용할 수 없습니다</p>
+    <div id="syncBody" style="display:flex; flex-direction:column; gap:12px">
+      <p class="presetSub" id="syncState">이 보드는 아직 공유되지 않았습니다</p>
+      <div id="syncCodeBox" hidden>
+        <div class="syncCode" id="syncCode">------</div>
+        <p class="presetSub">다른 태블릿에서 "공유"를 열고 아래 칸에 이 코드를 입력하면 실시간으로 함께 봅니다</p>
+      </div>
+      <button class="btn primary" id="syncShare">이 보드 공유하기</button>
+      <div class="syncJoinRow">
+        <input id="syncJoinCode" placeholder="참여 코드 입력" maxlength="6" spellcheck="false" autocapitalize="characters">
+        <button class="btn" id="syncJoin">참여</button>
+      </div>
+      <p class="presetSub" id="syncErr" hidden></p>
+    </div>
+    <div class="chipActions">
+      <button class="btn danger" id="syncStop" hidden>공유 해제(이 기기)</button>
+      <span class="grow"></span>
+      <button class="btn" id="syncClose">닫기</button>
+    </div>
+  </div>
+</div>
+
 <div id="emModal" hidden>
   <div class="chipCard emCard">
     <h3>비상상황</h3>
@@ -729,6 +775,11 @@
   </div>
   <div class="homeGrid" id="homeGrid"></div>
 </div>
+
+<!-- Firebase (2단계 다기기 동기화) — 로드 실패 시 앱은 단독 모드로 동작 -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
 <script>
 (function(){
@@ -976,6 +1027,7 @@
         }
       }
       saveIndex();
+      if(!syncApplying) schedulePush();   /* 공유 중이면 원격에도 반영 (아래 동기화 모듈) */
     }catch(e){}
   }
   window.addEventListener("pagehide",saveState);
@@ -1361,6 +1413,7 @@
         scheduleSave();
       }
       cur=null;
+      flushRemote();   /* 그리는 중 보류해 둔 원격 갱신 적용 */
     }
   }
   cv.addEventListener("pointerup",penUp);
@@ -1457,18 +1510,17 @@
     chip.addEventListener("pointerdown",dragStart);
     return chip;
   }
-  if(SAVED&&SAVED.chips){
-    SAVED.chips.forEach(function(d){
-      var chip=createChip(d.n,d.c);
-      if(d.z==="lane"&&laneList.children[d.i]){
-        laneList.children[d.i].querySelector(".laneBody").appendChild(chip);
-      }else if(d.z==="plan"){
-        placeOnPlan(chip,d.x,d.y);
-      }else{
-        tray.appendChild(chip);
-      }
-    });
+  function addChipFromData(d){
+    var chip=createChip(d.n,d.c);
+    if(d.z==="lane"&&laneList.children[d.i]){
+      laneList.children[d.i].querySelector(".laneBody").appendChild(chip);
+    }else if(d.z==="plan"){
+      placeOnPlan(chip,d.x,d.y);
+    }else{
+      tray.appendChild(chip);
+    }
   }
+  if(SAVED&&SAVED.chips){ SAVED.chips.forEach(addChipFromData); }
   /* 새 보드는 빈 트레이로 시작 — 프리셋 모달이 자동으로 열림 (아래 참조) */
 
   function chipZone(chip){
@@ -1576,6 +1628,7 @@
     chip.removeEventListener("pointerup",dragEnd);
     chip.removeEventListener("pointercancel",dragCancel);
     drag=null;
+    flushRemote();   /* 드래그 중 보류해 둔 원격 갱신 적용 */
   }
 
   /* ── 말 편집/추가 모달 ── */
@@ -2190,6 +2243,187 @@
 
   /* 새 보드(저장 이력 없음)면 출동대 프리셋 선택부터 시작 */
   if(!SAVED) openPreset();
+
+  /* ── 2단계: 다기기 실시간 동기화 (Firebase Firestore) ──
+     보드를 "공유"하면 rooms/{코드} 문서에 상태를 미러링하고,
+     다른 기기는 코드로 참여해 실시간 반영. 오프라인이면 Firestore가 큐잉 후 자동 전송.
+     확대/이동(view)·패널 배치(ui)는 기기별 설정이라 동기화에서 제외. */
+  var FB_CONFIG={
+    apiKey: "AIzaSyDmGD9syjoVoHQzxnsb9FqVArhf9-ylL30",
+    authDomain: "fire-command-board.firebaseapp.com",
+    projectId: "fire-command-board",
+    storageBucket: "fire-command-board.firebasestorage.app",
+    messagingSenderId: "715610670718",
+    appId: "1:715610670718:web:021ab188fba5006fd6fa2f"
+  };
+  var deviceId=localStorage.getItem("fireboard-device");
+  if(!deviceId){
+    deviceId=genId();
+    try{ localStorage.setItem("fireboard-device",deviceId); }catch(e){}
+  }
+  var fdb=null, syncUnsub=null, syncApplying=false, pendingRemote=null;
+  var lastPayload="", fbAuthed=false, fbQueue=[];
+
+  function fbReady(){ return !!(FB_CONFIG && typeof firebase!=="undefined"); }
+  function fbInit(){
+    if(fdb || !fbReady()) return;
+    firebase.initializeApp(FB_CONFIG);
+    fdb=firebase.firestore();
+    try{ fdb.enablePersistence({synchronizeTabs:true}).catch(function(){}); }catch(e){}
+    firebase.auth().onAuthStateChanged(function(u){
+      if(u){ fbAuthed=true; fbQueue.splice(0).forEach(function(f){ f(); }); }
+    });
+    firebase.auth().signInAnonymously().catch(function(){});
+  }
+  function whenAuthed(f){ if(fbAuthed) f(); else fbQueue.push(f); }
+
+  function boardMeta(){
+    for(var i=0;i<boardIndex.length;i++)
+      if(boardIndex[i].id===currentId) return boardIndex[i];
+    return null;
+  }
+  function shareCode(){ var m=boardMeta(); return (m&&m.share)||null; }
+
+  /* 원격 상태를 화면에 반영 (리로드 없이 전체 재구성) */
+  function applyRemote(st){
+    syncApplying=true;
+    try{
+      incidentEl.textContent=st.incident||"";
+      strokes=st.strokes||[]; redraw();
+      laneList.textContent="";
+      ((st.lanes&&st.lanes.length)?st.lanes:LANES).forEach(function(n){
+        laneList.appendChild(makeLane(n));
+      });
+      document.querySelectorAll(".chip").forEach(function(c){ c.remove(); });
+      (st.chips||[]).forEach(addChipFromData);
+      prioDivs.forEach(function(d,i){ d.textContent=(st.prio&&st.prio[i])||""; });
+      logData=(st.logs||[]).slice();
+      logList.textContent=""; logN=0;
+      logData.forEach(function(e){ renderLog(e.t,e.m); });
+      CHECKLISTS.forEach(function(r){ ckState[r.id]={}; });
+      if(st.ckd) Object.keys(st.ckd).forEach(function(rid){
+        if(ckState[rid]) (st.ckd[rid]||[]).forEach(function(i){ ckState[rid][i]=1; });
+      });
+      renderCkList();
+      RADIOS.forEach(function(r){
+        var t=rdState[r.id];
+        Object.keys(t).forEach(function(k){ delete t[k]; });
+        var src=st.rdc&&st.rdc[r.id];
+        if(src) Object.keys(src).forEach(function(k){ t[k]=src[k]; });
+      });
+      renderRdList();
+      emState=st.em||null; applyEm();
+      refreshCounts();
+      saveState();   /* 로컬 저장 — syncApplying 중이라 push는 안 됨 */
+    }finally{ syncApplying=false; }
+  }
+  function flushRemote(){
+    if(pendingRemote && !drag && !cur){
+      var st=pendingRemote; pendingRemote=null;
+      applyRemote(st);
+    }
+  }
+
+  function startSync(){
+    var code=shareCode();
+    if(!code || !fbReady()) return;
+    fbInit();
+    whenAuthed(function(){
+      if(syncUnsub) syncUnsub();
+      syncUnsub=fdb.collection("rooms").doc(code).onSnapshot(function(snap){
+        var d=snap.data();
+        if(!d || d.by===deviceId || d.s===lastPayload) return;
+        lastPayload=d.s;
+        var st=null;
+        try{ st=JSON.parse(d.s); }catch(e){ return; }
+        if(drag||cur){ pendingRemote=st; return; }  /* 조작 중이면 끝나고 적용 */
+        applyRemote(st);
+      }, function(){ /* 오류(권한·네트워크)는 다음 스냅샷에서 자연 회복 */ });
+    });
+  }
+  var pushTimer=null;
+  function schedulePush(){
+    if(!shareCode() || !fbReady()) return;
+    clearTimeout(pushTimer);
+    pushTimer=setTimeout(pushSync,600);
+  }
+  function pushSync(){
+    var code=shareCode();
+    if(!code || !fbReady()) return;
+    fbInit();
+    whenAuthed(function(){
+      var st=serialize();
+      delete st.ui; delete st.view;
+      var s=JSON.stringify(st);
+      if(s===lastPayload) return;
+      lastPayload=s;
+      fdb.collection("rooms").doc(code).set({s:s, by:deviceId, up:Date.now()}).catch(function(){});
+    });
+  }
+
+  /* 공유 UI */
+  var syncModal=document.getElementById("syncModal");
+  var syncBtnEl=document.getElementById("syncBtn");
+  var syncErr=document.getElementById("syncErr");
+  function showSyncErr(msg){ syncErr.textContent=msg; syncErr.hidden=false; }
+  function updateSyncUi(){
+    var code=shareCode();
+    syncBtnEl.textContent=code?("공유 "+code):"공유";
+    syncBtnEl.setAttribute("aria-expanded", code?"true":"false");
+    document.getElementById("syncNoCfg").hidden=fbReady();
+    document.getElementById("syncBody").style.display=fbReady()?"":"none";
+    document.getElementById("syncState").textContent=
+      code?"이 보드는 공유 중입니다 — 참여 코드:":"이 보드는 아직 공유되지 않았습니다";
+    document.getElementById("syncCodeBox").hidden=!code;
+    document.getElementById("syncCode").textContent=code||"------";
+    document.getElementById("syncShare").hidden=!!code;
+    document.getElementById("syncStop").hidden=!code;
+    syncErr.hidden=true;
+  }
+  function genCode(){
+    var a="ABCDEFGHJKLMNPQRSTUVWXYZ23456789", s="";
+    for(var i=0;i<6;i++) s+=a[Math.floor(Math.random()*a.length)];
+    return s;
+  }
+  syncBtnEl.addEventListener("click",function(){ updateSyncUi(); syncModal.hidden=false; });
+  document.getElementById("syncClose").addEventListener("click",function(){ syncModal.hidden=true; });
+  syncModal.addEventListener("pointerdown",function(e){ if(e.target===syncModal) syncModal.hidden=true; });
+  document.getElementById("syncShare").addEventListener("click",function(){
+    if(!fbReady()) return;
+    var m=boardMeta(); if(!m) return;
+    m.share=genCode(); saveIndex();
+    lastPayload="";
+    pushSync(); startSync();
+    log("보드 공유 시작 (코드 "+m.share+")");
+    updateSyncUi();
+  });
+  document.getElementById("syncStop").addEventListener("click",function(){
+    if(syncUnsub){ syncUnsub(); syncUnsub=null; }
+    var m=boardMeta();
+    if(m){ log("보드 공유 해제 (코드 "+m.share+")"); delete m.share; saveIndex(); }
+    updateSyncUi();
+  });
+  document.getElementById("syncJoin").addEventListener("click",function(){
+    if(!fbReady()) return;
+    var code=document.getElementById("syncJoinCode").value.trim().toUpperCase();
+    if(code.length!==6){ showSyncErr("6자리 코드를 입력하세요"); return; }
+    fbInit();
+    whenAuthed(function(){
+      fdb.collection("rooms").doc(code).get().then(function(snap){
+        if(!snap.exists){ showSyncErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
+        saveState();
+        var name="";
+        try{ name=(JSON.parse(snap.data().s).incident||"").trim(); }catch(e){}
+        var nb={id:genId(), name:name, created:Date.now(), updated:Date.now(), share:code};
+        try{ localStorage.setItem(boardKey(nb.id), snap.data().s); }catch(e){}
+        boardIndex.push(nb); saveIndex();
+        try{ localStorage.setItem(CURKEY, nb.id); }catch(e){}
+        location.reload();
+      }).catch(function(){ showSyncErr("연결 실패 — 네트워크를 확인하세요"); });
+    });
+  });
+  updateSyncUi();
+  if(shareCode()) startSync();
 
   /* ── PWA: 서비스워커 등록 (자체 호스팅에서만 — 아티팩트/파일 열기에선 조용히 건너뜀) ── */
   if("serviceWorker" in navigator
