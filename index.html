@@ -241,6 +241,17 @@
   }
   #prioPanel li>div{flex:1; min-height:20px; font-size:13.5px; font-weight:600; color:var(--ink-hi)}
   #prioPanel li>div:empty::before{content:"항목 입력"; color:var(--ink-lo); font-weight:500}
+  #prioPanel .px{
+    flex:0 0 auto; border:none; background:transparent; color:var(--ink-lo);
+    font-size:13px; font-weight:700; padding:2px 7px; border-radius:6px;
+  }
+  #prioPanel .px:active{color:#fff; background:var(--red)}
+  #addPrio{
+    margin:10px auto 2px; display:block; border:1.5px dashed var(--edge-2); background:transparent;
+    color:var(--amber); border-radius:99px; padding:7px 16px; font-weight:700; font-size:12.5px;
+    transition:border-color .15s;
+  }
+  #addPrio:hover{border-color:var(--amber)}
 
   /* 상태 레인 */
   #laneList{display:flex; flex-direction:column; gap:10px}
@@ -682,7 +693,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.13</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.14</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -760,12 +771,8 @@
   <section class="sideCard" id="prioPanel" aria-label="우선순위">
     <div class="phead"><h2>우선순위</h2><button class="hideBtn" data-panel="prio">숨기기</button></div>
     <div class="body">
-      <ol>
-        <li><div contenteditable="true" spellcheck="false"></div></li>
-        <li><div contenteditable="true" spellcheck="false"></div></li>
-        <li><div contenteditable="true" spellcheck="false"></div></li>
-        <li><div contenteditable="true" spellcheck="false"></div></li>
-      </ol>
+      <ol id="prioList"></ol>
+      <button id="addPrio">＋ 항목 추가</button>
     </div>
   </section>
   <section class="sideCard" id="lanePanel" aria-label="상태">
@@ -2756,9 +2763,37 @@
   var incidentEl=document.querySelector(".incident");
   if(SAVED&&typeof SAVED.incident==="string") incidentEl.textContent=SAVED.incident;
   incidentEl.addEventListener("input",scheduleSave);
-  var prioDivs=document.querySelectorAll("#prioPanel li>div");
-  if(SAVED&&SAVED.prio) prioDivs.forEach(function(d,i){ d.textContent=SAVED.prio[i]||""; });
-  prioDivs.forEach(function(d){ d.addEventListener("input",scheduleSave); });
+  /* 우선순위: 항목 추가/삭제 가능한 동적 목록 */
+  var prioListEl=document.getElementById("prioList");
+  function makePrioItem(text){
+    var li=document.createElement("li");
+    var d=document.createElement("div");
+    d.contentEditable="true"; d.spellcheck=false;
+    d.textContent=text||"";
+    d.addEventListener("input",scheduleSave);
+    var x=document.createElement("button");
+    x.className="px"; x.textContent="×"; x.setAttribute("aria-label","항목 삭제");
+    x.addEventListener("click",function(){
+      if(prioListEl.children.length>1) li.remove();
+      else d.textContent="";           /* 마지막 항목은 내용만 비움 */
+      scheduleSave();
+    });
+    li.appendChild(d); li.appendChild(x);
+    return li;
+  }
+  function buildPrio(arr){
+    prioListEl.textContent="";
+    ((arr&&arr.length)?arr:["","","",""]).forEach(function(t){
+      prioListEl.appendChild(makePrioItem(t));
+    });
+  }
+  buildPrio(SAVED&&SAVED.prio);
+  document.getElementById("addPrio").addEventListener("click",function(){
+    var li=makePrioItem("");
+    prioListEl.appendChild(li);
+    li.querySelector("div").focus();
+    scheduleSave();
+  });
 
   /* ── 상태 직렬화 (자동 저장의 본체) ── */
   function serialize(){
@@ -2778,7 +2813,8 @@
     var lanes=Array.prototype.map.call(laneList.children,function(l){
       return l.querySelector(".laneBody").dataset.lane;
     });
-    var prio=Array.prototype.map.call(prioDivs,function(d){ return d.textContent; });
+    var prio=Array.prototype.map.call(
+      prioListEl.querySelectorAll("li>div"),function(d){ return d.textContent; });
     function cardUi(p){ return {o:!p.hidden, g:parseFloat(p.style.flex)||0}; }
     var ckd={};
     Object.keys(ckState).forEach(function(rid){
@@ -2917,13 +2953,12 @@
     messagingSenderId: "715610670718",
     appId: "1:715610670718:web:021ab188fba5006fd6fa2f"
   };
-  var deviceId=localStorage.getItem("fireboard-device");
-  if(!deviceId){
-    deviceId=genId();
-    try{ localStorage.setItem("fireboard-device",deviceId); }catch(e){}
-  }
+  /* 기기 ID는 탭(실행)마다 고유 — 같은 브라우저의 두 탭·창끼리도 동기화되도록.
+     용도가 자기 에코 필터뿐이라 지속성이 필요 없다 */
+  var deviceId=genId();
   var fdb=null, syncUnsub=null, syncApplying=false, pendingRemote=null;
   var lastPayload="", fbAuthed=false, fbQueue=[];
+  var syncStatus="";   /* 공유 모달에 표시할 연결 상태 */
 
   function fbReady(){ return !!(FB_CONFIG && typeof firebase!=="undefined"); }
   function fbInit(){
@@ -2958,7 +2993,7 @@
       });
       document.querySelectorAll(".chip").forEach(function(c){ c.remove(); });
       (st.chips||[]).forEach(addChipFromData);
-      prioDivs.forEach(function(d,i){ d.textContent=(st.prio&&st.prio[i])||""; });
+      buildPrio(st.prio);
       logData=(st.logs||[]).slice();
       logList.textContent=""; logN=0;
       logData.forEach(function(e){ renderLog(e.t,e.m); });
@@ -2993,6 +3028,8 @@
     whenAuthed(function(){
       if(syncUnsub) syncUnsub();
       syncUnsub=fdb.collection("rooms").doc(code).onSnapshot(function(snap){
+        syncStatus=snap.metadata.fromCache ? "오프라인 — 재접속 시 자동 동기화" : "실시간 연결됨";
+        refreshSyncStatus();
         var d=snap.data();
         if(!d || d.by===deviceId || d.s===lastPayload) return;
         lastPayload=d.s;
@@ -3000,7 +3037,10 @@
         try{ st=JSON.parse(d.s); }catch(e){ return; }
         if(drag||cur){ pendingRemote=st; return; }  /* 조작 중이면 끝나고 적용 */
         applyRemote(st);
-      }, function(){ /* 오류(권한·네트워크)는 다음 스냅샷에서 자연 회복 */ });
+      }, function(err){
+        syncStatus="연결 오류 ("+(err&&err.code||"네트워크")+") — 자동 재시도";
+        refreshSyncStatus();
+      });
     });
   }
   var pushTimer=null;
@@ -3028,6 +3068,11 @@
   var syncBtnEl=document.getElementById("syncBtn");
   var syncErr=document.getElementById("syncErr");
   function showSyncErr(msg){ syncErr.textContent=msg; syncErr.hidden=false; }
+  function refreshSyncStatus(){
+    var code=shareCode();
+    var el=document.getElementById("syncState");
+    if(code) el.textContent="공유 중 · "+(syncStatus||"연결 대기")+" — 참여 코드:";
+  }
   function updateSyncUi(){
     var code=shareCode();
     syncBtnEl.textContent=code?("공유 "+code):"공유";
@@ -3035,7 +3080,7 @@
     document.getElementById("syncNoCfg").hidden=fbReady();
     document.getElementById("syncBody").style.display=fbReady()?"":"none";
     document.getElementById("syncState").textContent=
-      code?"이 보드는 공유 중입니다 — 참여 코드:":"이 보드는 아직 공유되지 않았습니다";
+      code?"공유 중 · "+(syncStatus||"연결 대기")+" — 참여 코드:":"이 보드는 아직 공유되지 않았습니다";
     document.getElementById("syncCodeBox").hidden=!code;
     document.getElementById("syncCode").textContent=code||"------";
     document.getElementById("syncShare").hidden=!!code;
@@ -3053,11 +3098,29 @@
   document.getElementById("syncShare").addEventListener("click",function(){
     if(!fbReady()) return;
     var m=boardMeta(); if(!m) return;
-    m.share=genCode(); saveIndex();
-    lastPayload="";
-    pushSync(); startSync();
-    log("보드 공유 시작 (코드 "+m.share+")");
-    updateSyncUi();
+    var code=genCode();
+    /* 서버에 기록이 끝난 뒤에 코드를 보여준다 — 코드만 보고 참여했다 실패하는 일 방지 */
+    var shareBtn=document.getElementById("syncShare");
+    shareBtn.disabled=true; shareBtn.textContent="서버 연결 중…";
+    function done(){ shareBtn.disabled=false; shareBtn.textContent="이 보드 공유하기"; }
+    fbInit();
+    whenAuthed(function(){
+      var st=serialize(); delete st.ui; delete st.view;
+      var s=JSON.stringify(st);
+      fdb.collection("rooms").doc(code).set({s:s, by:deviceId, up:Date.now()})
+        .then(function(){
+          done();
+          m.share=code; saveIndex();
+          lastPayload=s;
+          startSync();
+          log("보드 공유 시작 (코드 "+code+")");
+          updateSyncUi();
+        })
+        .catch(function(e){
+          done();
+          showSyncErr("공유 실패 — 네트워크를 확인하세요"+(e&&e.code?" ("+e.code+")":""));
+        });
+    });
   });
   document.getElementById("syncStop").addEventListener("click",function(){
     if(syncUnsub){ syncUnsub(); syncUnsub=null; }
