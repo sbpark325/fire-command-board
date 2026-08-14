@@ -113,6 +113,18 @@
   #planLayer{position:absolute; inset:0; overflow:hidden; pointer-events:none}
   #planLayer .chip{position:absolute; pointer-events:auto}
 
+  /* 도형·심볼 삭제 X 오버레이 (확대/이동을 따라다님) */
+  #shapeXLayer{position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:15}
+  #shapeXLayer .sx{
+    position:absolute; transform:translate(-50%,-50%);
+    width:19px; height:19px; padding:0; pointer-events:auto;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; border:1px solid rgba(0,0,0,.35);
+    background:#fff; color:#22262A; font-size:13px; line-height:1; font-weight:800;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  #shapeXLayer .sx:active{background:var(--red); border-color:var(--red); color:#fff}
+
   /* 줌 클러스터 (좌상단) */
   .zoom{
     position:absolute; left:12px; top:12px; z-index:20;
@@ -611,7 +623,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.4</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.5</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -628,6 +640,7 @@
 <main class="stage">
     <div class="canvasWrap" id="canvasWrap">
       <canvas id="cv"></canvas>
+      <div id="shapeXLayer"></div>
       <div id="planLayer"></div>
     </div>
 
@@ -1301,7 +1314,7 @@
 
   function applyView(){
     zoomPct.textContent=Math.round(view.s*100)+"%";
-    redraw(); updatePlanChips(); scheduleSave();
+    redraw(); updatePlanChips(); rebuildShapeX(); scheduleSave();
   }
   function zoomAt(cx,cy,factor){
     var ns=clampScale(view.s*factor); factor=ns/view.s;
@@ -1479,13 +1492,48 @@
     pointers.delete(e.pointerId);
     if(pointers.size<2) nav=null;
     if(pointers.size===0){
+      var finished=cur;
       if(cur){
         if(cur.type==="stamp") log("평면도 표기: "+SHAPE_NAMES["st-"+cur.sym]);
         scheduleSave();
       }
       cur=null;
+      if(finished) rebuildShapeX();   /* cur 해제 후 재구성해야 방금 도형에도 X가 붙음 */
       flushRemote();   /* 그리는 중 보류해 둔 원격 갱신 적용 */
     }
+  }
+
+  /* 도형·심볼마다 삭제 X 버튼을 화면 좌표로 배치 (펜 획은 지우개 담당이라 제외) */
+  var shapeXLayer=document.getElementById("shapeXLayer");
+  function shapeAnchor(s){
+    if(s.type==="stamp") return [s.at[0], s.at[1]-22];
+    if(s.type==="arrow") return [s.b[0], s.b[1]];
+    if(s.type==="rect"||s.type==="building")
+      return [Math.max(s.a[0],s.b[0]), Math.min(s.a[1],s.b[1])];
+    return null;
+  }
+  function rebuildShapeX(){
+    shapeXLayer.textContent="";
+    strokes.forEach(function(s,i){
+      if(s===cur) return;               /* 그리는 중인 도형은 확정 후에 */
+      var a=shapeAnchor(s);
+      if(!a) return;
+      var b=document.createElement("button");
+      b.className="sx"; b.textContent="×";
+      b.setAttribute("aria-label","도형 삭제");
+      b.style.left=(a[0]*view.s+view.tx)+"px";
+      b.style.top =(a[1]*view.s+view.ty)+"px";
+      b.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+      b.addEventListener("click",function(e){
+        e.stopPropagation();
+        strokes.splice(i,1);
+        log(s.type==="stamp"
+          ? "평면도 표기 삭제: "+(SHAPE_NAMES["st-"+s.sym]||s.sym)
+          : "도형 삭제: "+(SHAPE_NAMES[s.type]||s.type));
+        redraw(); rebuildShapeX(); scheduleSave();
+      });
+      shapeXLayer.appendChild(b);
+    });
   }
   cv.addEventListener("pointerup",penUp);
   cv.addEventListener("pointercancel",penUp);
@@ -1536,14 +1584,14 @@
 
   /* 되돌리기 */
   document.getElementById("undoBtn").addEventListener("click",function(){
-    if(strokes.length){ strokes.pop(); redraw(); scheduleSave(); }
+    if(strokes.length){ strokes.pop(); redraw(); rebuildShapeX(); scheduleSave(); }
   });
 
   /* 전체 지우기: 두 번 눌러 확정 */
   var clearBtn=document.getElementById("clearBtn"), clearTimer=null;
   clearBtn.addEventListener("click",function(){
     if(clearBtn.classList.contains("arm")){
-      strokes=[]; redraw(); log("평면도 전체 지움");
+      strokes=[]; redraw(); rebuildShapeX(); log("평면도 전체 지움");
       clearBtn.classList.remove("arm"); clearBtn.textContent="전체 지우기";
       clearTimeout(clearTimer);
     }else{
@@ -2400,7 +2448,7 @@
     syncApplying=true;
     try{
       incidentEl.textContent=st.incident||"";
-      strokes=st.strokes||[]; redraw();
+      strokes=st.strokes||[]; redraw(); rebuildShapeX();
       laneList.textContent="";
       ((st.lanes&&st.lanes.length)?st.lanes:LANES).forEach(function(n){
         laneList.appendChild(makeLane(n));
