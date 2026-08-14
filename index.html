@@ -632,7 +632,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.7</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.8</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -687,7 +687,7 @@
       <button data-shape="st-med" aria-pressed="false">임시의료소</button>
       <button data-shape="st-hyd" aria-pressed="false">소화전</button>
     </div>
-    <div class="hint">두 손가락 화면 이동/확대 · 말 탭=편집</div>
+    <div class="hint">두 손가락(터치)·휠/오른쪽 드래그(마우스) 화면 이동 · 말 탭=편집</div>
     <div id="emBanner" hidden>
       <span>🚨</span>
       <span id="emBannerText"></span>
@@ -1571,7 +1571,16 @@
     var r=wrap.getBoundingClientRect();
     return [e.clientX-r.left, e.clientY-r.top];
   }
+  /* 데스크톱 마우스: 가운데/오른쪽 버튼 드래그 = 화면 이동 */
+  var mousePan=null;
+  cv.addEventListener("contextmenu",function(e){ e.preventDefault(); });
   cv.addEventListener("pointerdown",function(e){
+    if(e.pointerType==="mouse" && e.button!==0){
+      mousePan={id:e.pointerId, x:e.clientX, y:e.clientY, tx:view.tx, ty:view.ty};
+      try{ cv.setPointerCapture(e.pointerId); }catch(err){}
+      e.preventDefault();
+      return;
+    }
     cv.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, localXY(e));
     if(pointers.size===1){
@@ -1598,6 +1607,12 @@
     e.preventDefault();
   });
   cv.addEventListener("pointermove",function(e){
+    if(mousePan && e.pointerId===mousePan.id){
+      view.tx=mousePan.tx+(e.clientX-mousePan.x);
+      view.ty=mousePan.ty+(e.clientY-mousePan.y);
+      applyView();
+      return;
+    }
     if(!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, localXY(e));
     if(nav && pointers.size>=2){
@@ -1618,6 +1633,7 @@
     }
   });
   function penUp(e){
+    if(mousePan && e.pointerId===mousePan.id){ mousePan=null; return; }
     pointers.delete(e.pointerId);
     if(pointers.size<2) nav=null;
     if(pointers.size===0){
@@ -1666,6 +1682,18 @@
   }
   cv.addEventListener("pointerup",penUp);
   cv.addEventListener("pointercancel",penUp);
+  /* 데스크톱: 휠 = 이동, Ctrl+휠(트랙패드 핀치 포함) = 커서 기준 확대/축소 */
+  cv.addEventListener("wheel",function(e){
+    e.preventDefault();
+    if(e.ctrlKey){
+      var p=localXY(e);
+      zoomAt(p[0], p[1], Math.pow(1.0015, -e.deltaY));
+    }else{
+      view.tx-=e.deltaX;
+      view.ty-=e.deltaY;
+      applyView();
+    }
+  },{passive:false});
   new ResizeObserver(resize).observe(wrap);
   resize();
   updateMapUi();   /* 지도 버튼·크레딧 상태를 복원된 geo에 맞춤 (strokes 초기화 이후) */
