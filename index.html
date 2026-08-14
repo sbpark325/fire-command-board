@@ -166,17 +166,35 @@
   }
   .tools button:active{background:rgba(255,255,255,.08)}
   .tools button[aria-pressed="true"]{background:rgba(255,255,255,.13); box-shadow:inset 0 0 0 1.5px var(--amber)}
-  .tools .colorBtn .dot{width:15px; height:15px; border-radius:50%; box-shadow:0 0 0 1.5px rgba(255,255,255,.3)}
-  .tools .colorBtn.c-black .dot{background:#2A2E33}
-  .tools .colorBtn.c-red .dot{background:var(--red)}
-  .tools .colorBtn{padding:9px 8px}
   .tools .danger{color:#FF7A64}
   .tools .danger.arm{background:var(--red); color:#fff}
   .tools .sep{width:1px; height:22px; background:var(--edge); margin:0 3px}
 
+  /* 도구 옵션 바 (도구바 위) — 펜·도형: 색상+굵기 / 지우개: 크기 */
+  .toolOpts{
+    position:absolute; left:50%; bottom:76px; transform:translateX(-50%); z-index:24;
+    display:flex; align-items:center; gap:6px; padding:6px 10px;
+    flex-wrap:wrap; justify-content:center; max-width:min(94vw,520px);
+    border-radius:12px; background:var(--pill);
+    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
+    border:1px solid var(--edge); box-shadow:var(--shadow);
+  }
+  .toolOpts[hidden]{display:none}
+  .optGroup{display:flex; align-items:center; gap:4px}
+  .optGroup[hidden]{display:none}
+  .toolOpts .sep[hidden]{display:none}
+  .optDot{
+    width:30px; height:30px; border:none; background:transparent; padding:0;
+    display:flex; align-items:center; justify-content:center; border-radius:9px;
+  }
+  .optDot .c{border-radius:50%; box-shadow:0 0 0 1px rgba(255,255,255,.28)}
+  .optDot[aria-pressed="true"]{background:rgba(255,255,255,.13); box-shadow:inset 0 0 0 1.5px var(--amber)}
+  .optDot.wd .c{background:#fff; box-shadow:none}
+  .optDot.er .c{background:transparent; border:1.5px solid #fff; box-shadow:none}
+
   /* 도형 선택 팝업 */
   .shapeMenu{
-    position:absolute; left:50%; bottom:76px; transform:translateX(-50%); z-index:25;
+    position:absolute; left:50%; bottom:132px; transform:translateX(-50%); z-index:25;
     display:flex; gap:4px; padding:6px; flex-wrap:wrap; justify-content:center;
     max-width:min(94vw, 560px);
     border-radius:12px; background:var(--pill);
@@ -664,7 +682,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.11</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.12</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -702,11 +720,14 @@
       <button data-tool="note" aria-pressed="false">메모</button>
       <button id="shapeBtn" aria-expanded="false" aria-pressed="false">도형 ▾</button>
       <span class="sep"></span>
-      <button class="colorBtn c-black" data-color="black" aria-pressed="true" aria-label="검정"><span class="dot"></span></button>
-      <button class="colorBtn c-red" data-color="red" aria-pressed="false" aria-label="빨강"><span class="dot"></span></button>
-      <span class="sep"></span>
       <button id="undoBtn">되돌리기</button>
       <button class="danger" id="clearBtn">전체 지우기</button>
+    </div>
+    <div class="toolOpts" id="toolOpts" hidden>
+      <div class="optGroup" id="optColors"></div>
+      <span class="sep" id="optSep"></span>
+      <div class="optGroup" id="optWidths"></div>
+      <div class="optGroup" id="optErase" hidden></div>
     </div>
     <div class="shapeMenu" id="shapeMenu" hidden>
       <button data-shape="arrow" aria-pressed="false">↗ 화살표</button>
@@ -1574,8 +1595,12 @@
      여기서 호출하면 redraw가 미정의 strokes를 참조해 부트 전체가 죽는다 */
 
   /* ── 캔버스: 펜/도형 그리기 + 두 손가락 팬/줌 ── */
-  var strokes=(SAVED&&SAVED.strokes)||[], cur=null, tool="pen", penColor="black";
-  var COLORS={black:"#22262A", red:"#E0432D"};
+  var strokes=(SAVED&&SAVED.strokes)||[], cur=null, tool="pen";
+  /* 그리기 옵션: 펜 색상 6종·굵기 3단계, 지우개 크기 3단계 */
+  var PEN_COLORS=["#22262A","#E0432D","#1D4ED8","#1E7233","#D97F1E","#7A4EC5"];
+  var PEN_WIDTHS=[2,3.5,6];
+  var ERASE_WIDTHS=[14,28,56];
+  var penColor=PEN_COLORS[0], penWidth=PEN_WIDTHS[1], eraseW=ERASE_WIDTHS[1];
   var pointers=new Map(), nav=null;
 
   function resize(){
@@ -1818,13 +1843,13 @@
       }
       if(tool==="pen"||tool==="erase"){
         cur={type:"free", e:(tool==="erase"?1:0),
-             color:(tool==="erase"?PAPER:COLORS[penColor]),
-             width:(tool==="erase"?24:3), pts:[w]};
+             color:(tool==="erase"?PAPER:penColor),
+             width:(tool==="erase"?eraseW:penWidth), pts:[w]};
       }else if(tool.indexOf("st-")===0){
         /* 스탬프: 누른 자리에 배치, 떼기 전까지 드래그로 위치 미세조정 */
         cur={type:"stamp", sym:tool.slice(3), at:w};
       }else{
-        cur={type:tool, color:COLORS[penColor], width:3, a:w, b:w};
+        cur={type:tool, color:penColor, width:penWidth, a:w, b:w};
       }
       strokes.push(cur);
     }else if(pointers.size===2){
@@ -1966,6 +1991,7 @@
     shapeMenu.querySelectorAll("[data-shape]").forEach(function(b){
       b.setAttribute("aria-pressed", b.dataset.shape===t ? "true":"false");
     });
+    refreshToolOpts();
   }
   document.querySelectorAll(".tools [data-tool]").forEach(function(btn){
     btn.addEventListener("click",function(){ setTool(btn.dataset.tool); closeShapeMenu(); });
@@ -1979,14 +2005,64 @@
     btn.addEventListener("click",function(){ setTool(btn.dataset.shape); closeShapeMenu(); });
   });
   cv.addEventListener("pointerdown",closeShapeMenu);
-  document.querySelectorAll(".tools [data-color]").forEach(function(btn){
-    btn.addEventListener("click",function(){
-      penColor=btn.dataset.color;
-      document.querySelectorAll(".tools [data-color]").forEach(function(b){
-        b.setAttribute("aria-pressed", b===btn ? "true":"false");
-      });
+
+  /* ── 도구 옵션 바: 펜·도형=색상+굵기 / 지우개=크기 ── */
+  var toolOpts=document.getElementById("toolOpts");
+  var optColors=document.getElementById("optColors");
+  var optWidths=document.getElementById("optWidths");
+  var optErase=document.getElementById("optErase");
+  var optSep=document.getElementById("optSep");
+  function renderOptStates(){
+    optColors.querySelectorAll(".optDot").forEach(function(b){
+      b.setAttribute("aria-pressed", b.dataset.v===penColor ? "true":"false");
     });
+    optWidths.querySelectorAll(".optDot").forEach(function(b){
+      b.setAttribute("aria-pressed", parseFloat(b.dataset.v)===penWidth ? "true":"false");
+    });
+    optErase.querySelectorAll(".optDot").forEach(function(b){
+      b.setAttribute("aria-pressed", parseFloat(b.dataset.v)===eraseW ? "true":"false");
+    });
+  }
+  function refreshToolOpts(){
+    var isDraw=(tool==="pen"||tool==="arrow"||tool==="rect"||tool==="building");
+    var isErase=(tool==="erase");
+    toolOpts.hidden=!(isDraw||isErase);
+    optColors.hidden=!isDraw;
+    optWidths.hidden=!isDraw;
+    optSep.hidden=!isDraw;
+    optErase.hidden=!isErase;
+  }
+  PEN_COLORS.forEach(function(c){
+    var b=document.createElement("button");
+    b.className="optDot"; b.dataset.v=c; b.setAttribute("aria-label","펜 색상");
+    var d=document.createElement("span"); d.className="c";
+    d.style.width="16px"; d.style.height="16px"; d.style.background=c;
+    b.appendChild(d);
+    b.addEventListener("click",function(){ penColor=c; renderOptStates(); });
+    optColors.appendChild(b);
   });
+  PEN_WIDTHS.forEach(function(wd,i){
+    var b=document.createElement("button");
+    b.className="optDot wd"; b.dataset.v=wd; b.setAttribute("aria-label","펜 굵기");
+    var d=document.createElement("span"); d.className="c";
+    var px=[6,9,13][i];
+    d.style.width=px+"px"; d.style.height=px+"px";
+    b.appendChild(d);
+    b.addEventListener("click",function(){ penWidth=wd; renderOptStates(); });
+    optWidths.appendChild(b);
+  });
+  ERASE_WIDTHS.forEach(function(wd,i){
+    var b=document.createElement("button");
+    b.className="optDot er"; b.dataset.v=wd; b.setAttribute("aria-label","지우개 크기");
+    var d=document.createElement("span"); d.className="c";
+    var px=[10,16,23][i];
+    d.style.width=px+"px"; d.style.height=px+"px";
+    b.appendChild(d);
+    b.addEventListener("click",function(){ eraseW=wd; renderOptStates(); });
+    optErase.appendChild(b);
+  });
+  renderOptStates();
+  refreshToolOpts();
 
   /* 되돌리기 */
   document.getElementById("undoBtn").addEventListener("click",function(){
