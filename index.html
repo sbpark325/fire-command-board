@@ -632,7 +632,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.8</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.9</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -663,6 +663,7 @@
     <div id="osmCredit" hidden>© OpenStreetMap contributors</div>
 
     <div class="tools" role="toolbar" aria-label="그리기 도구">
+      <button data-tool="pan" aria-pressed="false">이동</button>
       <button data-tool="pen" aria-pressed="true">펜</button>
       <button data-tool="erase" aria-pressed="false">지우개</button>
       <button id="shapeBtn" aria-expanded="false" aria-pressed="false">도형 ▾</button>
@@ -1320,6 +1321,8 @@
   var wrap=document.getElementById("canvasWrap");
   var planLayer=document.getElementById("planLayer");
   var cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+  /* 획·도형 전용 투명 레이어 — 지우개를 destination-out으로 처리해 배경(지도)을 보존 */
+  var sc=document.createElement("canvas"), sctx=sc.getContext("2d");
   var zoomPct=document.getElementById("zoomPct");
 
   function s2w(px,py){ return [(px-view.tx)/view.s, (py-view.ty)/view.s] }
@@ -1510,10 +1513,14 @@
     ctx.strokeStyle=s.color; ctx.lineWidth=s.width;
     if(s.type==="free"){
       if(s.pts.length<2) return;
+      /* 지우개 획(신규 e 플래그 또는 구버전 종이색 획)은 진짜 투명 지우기 */
+      var er=s.e || s.color===PAPER;
+      if(er){ ctx.globalCompositeOperation="destination-out"; ctx.strokeStyle="#000"; }
       ctx.beginPath();
       ctx.moveTo(s.pts[0][0],s.pts[0][1]);
       for(var i=1;i<s.pts.length;i++) ctx.lineTo(s.pts[i][0],s.pts[i][1]);
       ctx.stroke();
+      if(er) ctx.globalCompositeOperation="source-over";
     }else if(s.type==="rect"||s.type==="building"){
       var x=Math.min(s.a[0],s.b[0]), y=Math.min(s.a[1],s.b[1]);
       var w=Math.abs(s.b[0]-s.a[0]), h=Math.abs(s.b[1]-s.a[1]);
@@ -1564,15 +1571,24 @@
           ctx.beginPath(); ctx.arc(gx,gy,rdot,0,7); ctx.fill();
         }
     }
-    ctx.lineCap="round"; ctx.lineJoin="round";
+    /* 획·도형은 투명 레이어에 그린 뒤 합성 — 지우개는 획만 지우고 지도·종이는 보존 */
+    if(sc.width!==cv.width || sc.height!==cv.height){ sc.width=cv.width; sc.height=cv.height; }
+    sctx.setTransform(1,0,0,1,0,0);
+    sctx.clearRect(0,0,sc.width,sc.height);
+    sctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.tx,dpr*view.ty);
+    sctx.lineCap="round"; sctx.lineJoin="round";
+    var mainCtx=ctx; ctx=sctx;      /* drawShape가 쓰는 ctx를 잠시 레이어로 전환 */
     strokes.forEach(drawShape);
+    ctx=mainCtx;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.drawImage(sc,0,0,cw,ch);
   }
   function localXY(e){
     var r=wrap.getBoundingClientRect();
     return [e.clientX-r.left, e.clientY-r.top];
   }
-  /* 데스크톱 마우스: 가운데/오른쪽 버튼 드래그 = 화면 이동 */
-  var mousePan=null;
+  /* 데스크톱 마우스: 가운데/오른쪽 버튼 드래그 = 화면 이동 / 이동 도구용 단일 포인터 팬 */
+  var mousePan=null, panStart=null;
   cv.addEventListener("contextmenu",function(e){ e.preventDefault(); });
   cv.addEventListener("pointerdown",function(e){
     if(e.pointerType==="mouse" && e.button!==0){
@@ -1584,9 +1600,16 @@
     cv.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, localXY(e));
     if(pointers.size===1){
+      if(tool==="pan"){
+        /* 이동 도구: 한 손가락/좌클릭 드래그 = 화면 이동만 */
+        panStart={x:e.clientX, y:e.clientY, tx:view.tx, ty:view.ty};
+        cur=null;
+        e.preventDefault();
+        return;
+      }
       var p=localXY(e), w=s2w(p[0],p[1]);
       if(tool==="pen"||tool==="erase"){
-        cur={type:"free",
+        cur={type:"free", e:(tool==="erase"?1:0),
              color:(tool==="erase"?PAPER:COLORS[penColor]),
              width:(tool==="erase"?24:3), pts:[w]};
       }else if(tool.indexOf("st-")===0){
@@ -1597,6 +1620,7 @@
       }
       strokes.push(cur);
     }else if(pointers.size===2){
+      panStart=null;
       /* 두 번째 손가락 → 방금 시작한 획은 취소하고 팬/줌 모드 */
       if(cur){ strokes.pop(); cur=null; redraw(); }
       var pts=Array.from(pointers.values());
@@ -1610,6 +1634,12 @@
     if(mousePan && e.pointerId===mousePan.id){
       view.tx=mousePan.tx+(e.clientX-mousePan.x);
       view.ty=mousePan.ty+(e.clientY-mousePan.y);
+      applyView();
+      return;
+    }
+    if(panStart && tool==="pan" && pointers.size<2){
+      view.tx=panStart.tx+(e.clientX-panStart.x);
+      view.ty=panStart.ty+(e.clientY-panStart.y);
       applyView();
       return;
     }
@@ -1637,6 +1667,7 @@
     pointers.delete(e.pointerId);
     if(pointers.size<2) nav=null;
     if(pointers.size===0){
+      panStart=null;
       var finished=cur;
       if(cur){
         if(cur.type==="stamp") log("평면도 표기: "+SHAPE_NAMES["st-"+cur.sym]);
