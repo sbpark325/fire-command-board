@@ -623,7 +623,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.5</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.6</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1252,12 +1252,13 @@
     setPanel(key, u?!!u.o:defOn);
     if(u&&u.g) panels[key].panel.style.flex=u.g+" 1 0px";
   }
-  /* 기본: 우선순위·상태·기록 표시 — 휴대폰(좁은 화면)에선 평면도만 보이게 전부 접고 시작 */
+  /* 기본: 우선순위·상태만 표시(기록·체크리스트·무전문은 꺼짐) —
+     휴대폰(좁은 화면)에선 평면도만 보이게 전부 접고 시작 */
   restoreCard("prio",!MOBILE);
   restoreCard("lane",!MOBILE);
   restoreCard("ck",false);
   restoreCard("rd",false);
-  restoreCard("log",!MOBILE);
+  restoreCard("log",false);
 
   /* ── 상태 레인: 생성/추가/삭제 ── */
   var laneList=document.getElementById("laneList");
