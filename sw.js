@@ -1,6 +1,6 @@
 /* 현장지휘 보드 — 오프라인 캐시 서비스워커
    배포할 때마다 CACHE 버전을 올리면 이전 캐시가 교체된다. */
-var CACHE = "fireboard-v2.12";
+var CACHE = "fireboard-v2.13";
 var ASSETS = [
   "./",
   "./index.html",
@@ -46,7 +46,8 @@ self.addEventListener("fetch", function (e) {
   var url = new URL(e.request.url);
   if (url.origin !== location.origin
       && url.hostname !== "www.gstatic.com"
-      && url.hostname !== "tile.openstreetmap.org") return;
+      && url.hostname !== "tile.openstreetmap.org"
+      && url.hostname !== "server.arcgisonline.com") return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(function (cached) {
       var fetched = fetch(e.request).then(function (res) {
