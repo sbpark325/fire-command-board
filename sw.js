@@ -1,6 +1,6 @@
 /* 현장지휘 보드 — 오프라인 캐시 서비스워커
    배포할 때마다 CACHE 버전을 올리면 이전 캐시가 교체된다. */
-var CACHE = "fireboard-v2.6";
+var CACHE = "fireboard-v2.7";
 var ASSETS = [
   "./",
   "./index.html",
@@ -42,9 +42,11 @@ self.addEventListener("activate", function (e) {
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
   /* Firestore 등 API 통신은 캐시하지 않고 네트워크에 그대로 맡긴다
-     (같은 출처의 앱 자산과 gstatic SDK만 캐시 대상) */
+     (앱 자산·gstatic SDK·OSM 지도 타일만 캐시 대상 — 타일은 한 번 보면 오프라인에서도 표시) */
   var url = new URL(e.request.url);
-  if (url.origin !== location.origin && url.hostname !== "www.gstatic.com") return;
+  if (url.origin !== location.origin
+      && url.hostname !== "www.gstatic.com"
+      && url.hostname !== "tile.openstreetmap.org") return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(function (cached) {
       var fetched = fetch(e.request).then(function (res) {

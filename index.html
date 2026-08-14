@@ -140,6 +140,15 @@
   .zoom button:active{background:rgba(255,255,255,.08)}
   .zoom #zoomPct{font-size:11px; font-weight:800; letter-spacing:.03em; color:var(--amber);
     font-variant-numeric:tabular-nums}
+  .zoom #mapBtn{font-size:12px}
+  .zoom #gpsBtn{font-size:16px}
+  .zoom button[aria-pressed="true"]{color:var(--amber)}
+  #osmCredit{
+    position:absolute; right:8px; bottom:4px; z-index:14; pointer-events:none;
+    font-size:10px; color:#666; background:rgba(246,247,244,.75);
+    padding:1px 6px; border-radius:4px;
+  }
+  #osmCredit[hidden]{display:none}
 
   /* 그리기 도구 (하단 중앙 플로팅 필) */
   .tools{
@@ -623,7 +632,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.6</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.7</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -648,7 +657,10 @@
       <button id="zoomIn" aria-label="확대">＋</button>
       <button id="zoomPct" aria-label="배율 초기화">100%</button>
       <button id="zoomOut" aria-label="축소">－</button>
+      <button id="mapBtn" aria-label="지도 배경" aria-pressed="false">지도</button>
+      <button id="gpsBtn" aria-label="현 위치로 이동" hidden>◎</button>
     </div>
+    <div id="osmCredit" hidden>© OpenStreetMap contributors</div>
 
     <div class="tools" role="toolbar" aria-label="그리기 도구">
       <button data-tool="pen" aria-pressed="true">펜</button>
@@ -1311,7 +1323,70 @@
   var zoomPct=document.getElementById("zoomPct");
 
   function s2w(px,py){ return [(px-view.tx)/view.s, (py-view.ty)/view.s] }
-  function clampScale(s){ return Math.min(5, Math.max(0.3, s)) }
+  /* 지도 모드에선 시가지 전체가 보이도록 더 넓게 축소 허용 */
+  function clampScale(s){ return Math.min(5, Math.max((geo&&geo.on)?0.05:0.3, s)) }
+
+  /* ── 실제 지도 배경 (OpenStreetMap 타일) ──
+     보드에 지리 기준점(geo.lat/lng)을 저장하고 월드 좌표를 웹 메르카토르(z17 픽셀)에 고정.
+     말·그림·심볼은 월드 좌표 그대로라 지도 위 실제 위치에 붙는다. */
+  var geo=(SAVED&&SAVED.geo)||null;   /* {on, lat, lng} — 보드별 저장·동기화 */
+  var TILE=256, BASEZ=17;
+  var tileCache={}, tileOrder=[], geoO=null;
+  function merc(lat,lng){
+    var n=TILE*Math.pow(2,BASEZ);
+    var x=(lng+180)/360*n;
+    var rad=lat*Math.PI/180;
+    var y=(1-Math.log(Math.tan(rad)+1/Math.cos(rad))/Math.PI)/2*n;
+    return {x:x, y:y};
+  }
+  function geoOrg(){
+    if(!geo) return null;
+    if(!geoO) geoO=merc(geo.lat, geo.lng);
+    return geoO;
+  }
+  function tileFor(z,x,y){
+    var max=Math.pow(2,z);
+    if(y<0||y>=max) return null;
+    x=((x%max)+max)%max;
+    var key=z+"/"+x+"/"+y;
+    var t=tileCache[key];
+    if(!t){
+      t={img:new Image(), ok:false};
+      t.img.crossOrigin="anonymous";
+      t.img.onload=function(){ t.ok=true; redraw(); };
+      t.img.src="https://tile.openstreetmap.org/"+key+".png";
+      tileCache[key]=t; tileOrder.push(key);
+      if(tileOrder.length>400) delete tileCache[tileOrder.shift()];
+    }
+    return t;
+  }
+  function drawTiles(cw,ch){
+    var O=geoOrg();
+    var tz=Math.max(3, Math.min(19, BASEZ+Math.round(Math.log(view.s)/Math.LN2)));
+    var k=Math.pow(2, tz-BASEZ);          /* 월드(z17)px → 타일 z px 배율 */
+    var a=s2w(0,0), b=s2w(cw,ch);
+    var x0=Math.floor((a[0]+O.x)*k/TILE), x1=Math.floor((b[0]+O.x)*k/TILE);
+    var y0=Math.floor((a[1]+O.y)*k/TILE), y1=Math.floor((b[1]+O.y)*k/TILE);
+    for(var tx=x0; tx<=x1; tx++) for(var ty=y0; ty<=y1; ty++){
+      var wx=tx*TILE/k-O.x, wy=ty*TILE/k-O.y, ws=TILE/k;
+      var t=tileFor(tz,tx,ty);
+      if(t&&t.ok){
+        ctx.drawImage(t.img, wx, wy, ws, ws);
+      }else{
+        /* 로딩 동안 상위 줌 캐시로 임시 채움 (확대/축소 시 빈 화면 방지) */
+        for(var up=1; up<=4; up++){
+          var pz=tz-up; if(pz<3) break;
+          var f=Math.pow(2,up), pmax=Math.pow(2,pz);
+          var px=Math.floor(tx/f), py=Math.floor(ty/f);
+          var pt=tileCache[pz+"/"+(((px%pmax)+pmax)%pmax)+"/"+py];
+          if(pt&&pt.ok){
+            ctx.drawImage(pt.img,(tx-px*f)*TILE/f,(ty-py*f)*TILE/f,TILE/f,TILE/f, wx,wy,ws,ws);
+            break;
+          }
+        }
+      }
+    }
+  }
 
   function applyView(){
     zoomPct.textContent=Math.round(view.s*100)+"%";
@@ -1330,6 +1405,54 @@
     var r=wrap.getBoundingClientRect(); zoomAt(r.width/2,r.height/2,0.8);
   });
   zoomPct.addEventListener("click",function(){ view.s=1; view.tx=0; view.ty=0; applyView(); });
+
+  /* ── 지도 배경 토글 + 현 위치 이동 ── */
+  var mapBtn=document.getElementById("mapBtn");
+  var gpsBtn=document.getElementById("gpsBtn");
+  var osmCredit=document.getElementById("osmCredit");
+  function updateMapUi(){
+    var on=!!(geo&&geo.on);
+    mapBtn.setAttribute("aria-pressed", on?"true":"false");
+    gpsBtn.hidden=!on;
+    osmCredit.hidden=!on;
+    redraw();
+  }
+  function centerOn(lat,lng){
+    var O=geoOrg(); if(!O) return;
+    var m=merc(lat,lng);
+    var r=wrap.getBoundingClientRect();
+    view.tx=r.width/2-(m.x-O.x)*view.s;
+    view.ty=r.height/2-(m.y-O.y)*view.s;
+    applyView();
+  }
+  mapBtn.addEventListener("click",function(){
+    if(geo){
+      geo.on=!geo.on;
+      log(geo.on?"지도 배경 켬":"지도 배경 끔");
+      updateMapUi(); scheduleSave();
+      return;
+    }
+    /* 최초 켜기: GPS로 기준점 설정 (거부/실패 시 울산 시내 기본) */
+    function setAnchor(lat,lng,src){
+      geo={on:true, lat:lat, lng:lng}; geoO=null;
+      log("지도 배경 켬 — 기준점: "+src);
+      updateMapUi(); scheduleSave();
+    }
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(
+        function(p){ setAnchor(p.coords.latitude, p.coords.longitude, "현 위치(GPS)"); },
+        function(){ setAnchor(35.5384, 129.3114, "기본(울산)"); },
+        {enableHighAccuracy:true, timeout:6000});
+    }else setAnchor(35.5384, 129.3114, "기본(울산)");
+  });
+  gpsBtn.addEventListener("click",function(){
+    if(!navigator.geolocation||!geo) return;
+    navigator.geolocation.getCurrentPosition(
+      function(p){ centerOn(p.coords.latitude, p.coords.longitude); },
+      function(){}, {enableHighAccuracy:true, timeout:6000});
+  });
+  /* 주의: 초기 updateMapUi()는 캔버스·strokes 초기화 이후(resize 직후)에 호출한다 —
+     여기서 호출하면 redraw가 미정의 strokes를 참조해 부트 전체가 죽는다 */
 
   /* ── 캔버스: 펜/도형 그리기 + 두 손가락 팬/줌 ── */
   var strokes=(SAVED&&SAVED.strokes)||[], cur=null, tool="pen", penColor="black";
@@ -1428,14 +1551,19 @@
     ctx.fillStyle=PAPER; ctx.fillRect(0,0,cw,ch);
 
     ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.tx,dpr*view.ty);
-    /* 점 격자 (이동·확대 시 위치 감각용) */
-    var a=s2w(0,0), b=s2w(cw,ch), G=60;
-    ctx.fillStyle="#E1E3DD";
-    var rdot=Math.max(1/view.s,0.6);
-    for(var gx=Math.floor(a[0]/G)*G; gx<=b[0]; gx+=G)
-      for(var gy=Math.floor(a[1]/G)*G; gy<=b[1]; gy+=G){
-        ctx.beginPath(); ctx.arc(gx,gy,rdot,0,7); ctx.fill();
-      }
+    if(geo&&geo.on){
+      /* 실제 지도 배경 */
+      drawTiles(cw,ch);
+    }else{
+      /* 점 격자 (이동·확대 시 위치 감각용) */
+      var a=s2w(0,0), b=s2w(cw,ch), G=60;
+      ctx.fillStyle="#E1E3DD";
+      var rdot=Math.max(1/view.s,0.6);
+      for(var gx=Math.floor(a[0]/G)*G; gx<=b[0]; gx+=G)
+        for(var gy=Math.floor(a[1]/G)*G; gy<=b[1]; gy+=G){
+          ctx.beginPath(); ctx.arc(gx,gy,rdot,0,7); ctx.fill();
+        }
+    }
     ctx.lineCap="round"; ctx.lineJoin="round";
     strokes.forEach(drawShape);
   }
@@ -1540,6 +1668,7 @@
   cv.addEventListener("pointercancel",penUp);
   new ResizeObserver(resize).observe(wrap);
   resize();
+  updateMapUi();   /* 지도 버튼·크레딧 상태를 복원된 geo에 맞춤 (strokes 초기화 이후) */
 
   /* 도구/색 선택 (도형은 별도 팝업 탭) */
   var shapeBtn=document.getElementById("shapeBtn");
@@ -2284,7 +2413,7 @@
       ckd[rid]=Object.keys(ckState[rid]).map(Number);
     });
     return {
-      v:1, incident:incidentEl.textContent, view:view, strokes:strokes,
+      v:1, incident:incidentEl.textContent, view:view, strokes:strokes, geo:geo,
       lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd, rdc:rdState, em:emState,
       ui:{ prio:cardUi(panels.prio.panel), lane:cardUi(panels.lane.panel),
            ck:cardUi(panels.ck.panel), rd:cardUi(panels.rd.panel), log:cardUi(logCard),
@@ -2449,6 +2578,7 @@
     syncApplying=true;
     try{
       incidentEl.textContent=st.incident||"";
+      geo=st.geo||null; geoO=null; updateMapUi();
       strokes=st.strokes||[]; redraw(); rebuildShapeX();
       laneList.textContent="";
       ((st.lanes&&st.lanes.length)?st.lanes:LANES).forEach(function(n){
