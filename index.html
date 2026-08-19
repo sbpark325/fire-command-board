@@ -778,7 +778,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.24</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.25</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -3208,9 +3208,9 @@
   var AI_PROV_K="fireboard-ai-prov";
   var AI_KEY_KS={gemini:"fireboard-ai-key-gemini", anthropic:"fireboard-ai-key"};
   var AI_MODEL_KS={gemini:"fireboard-ai-model-gemini", anthropic:"fireboard-ai-model"};
-  var AI_MODEL_DEFS={gemini:"gemini-2.5-flash", anthropic:"claude-opus-5"};
+  var AI_MODEL_DEFS={gemini:"gemini-3.6-flash", anthropic:"claude-opus-5"};   /* 2.5-flash는 신규 사용자에게 404(2026-08 확인) */
   var AI_PROV_INFO={
-    gemini:{name:"Google Gemini", ph:"AIza…",
+    gemini:{name:"Google Gemini", ph:"AQ.… 또는 AIza…",
       note:"키는 aistudio.google.com/apikey 에서 무료로 발급합니다. 무료 티어는 구글이 입력한 내용을 서비스 개선에 쓸 수 있으니 기관 정책을 확인하세요. 지령서 사진은 Google API로 직접 전송됩니다."},
     anthropic:{name:"Anthropic Claude", ph:"sk-ant-…",
       note:"키는 console.anthropic.com 에서 발급합니다(유료 — 지령서 1장당 약 $0.02~0.10). 지령서 사진은 Anthropic API로 직접 전송됩니다."}
@@ -3380,7 +3380,9 @@
           if(!r.ok){
             var msg=(j&&j.error&&j.error.message)||("HTTP "+r.status);
             if(r.status===404 && !retried){
-              return aiGeminiPickModel().then(function(m){
+              /* 폐기 안내문에 권장 모델이 있으면 그걸, 없으면 목록에서 최신 flash */
+              var rec=(msg.match(/models\/(gemini-[\w.-]+)/)||[])[1];
+              return (rec?Promise.resolve(rec):aiGeminiPickModel()).then(function(m){
                 if(m && m!==model){
                   try{ localStorage.setItem(AI_MODEL_KS.gemini,m); }catch(e){}
                   return aiCallGemini(b64,m,true);
