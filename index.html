@@ -583,7 +583,7 @@
   }
   #lanePickModal[hidden]{display:none}
   #lanePickGrid .puBtn{border-width:2px}
-  .presetCard{width:min(640px,94vw); max-height:86vh}
+  .chipCard.presetCard{width:min(640px,94vw); max-height:86vh}  /* .chipCard보다 뒤에 오지 않아 우선순위로 이긴다 */
   .presetSub{margin:-6px 0 0; font-size:12px; color:var(--ink-lo); font-weight:600}
   .stTabs{display:flex; gap:6px; flex-wrap:wrap}
   .stTab{
@@ -604,12 +604,58 @@
   }
   .puBtn[aria-pressed="true"]{background:var(--amber); border-color:var(--amber); color:var(--amber-ink)}
   .puBtn.have{opacity:.38; text-decoration:line-through}
-  #presetBtn{
+  #presetBtn,#aiBtn{
     flex:0 0 auto; height:44px; border-radius:99px; padding:0 16px;
     border:1.5px dashed var(--edge-2); background:transparent; color:var(--amber);
     font-weight:700; font-size:13px; transition:border-color .15s;
   }
-  #presetBtn:hover{border-color:var(--amber)}
+  #presetBtn:hover,#aiBtn:hover{border-color:var(--amber)}
+  #aiBtn{padding:0 13px}
+
+  /* ── 출동지령서 인식(AI) 모달 ── */
+  #aiModal,#aiKeyModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #aiKeyModal{z-index:90}
+  #aiModal[hidden],#aiKeyModal[hidden]{display:none}
+  .aiInfo{
+    background:var(--bg2); border:1px solid var(--edge); border-radius:10px; padding:10px 12px;
+    font-size:12.5px; line-height:1.5; color:var(--ink-hi); display:flex; flex-direction:column; gap:3px;
+  }
+  .aiInfo b{color:var(--amber); font-weight:800; margin-right:6px}
+  .aiInfo:empty{display:none}
+  .aiList{
+    display:flex; flex-direction:column; gap:6px; max-height:40vh; overflow-y:auto; scrollbar-width:thin;
+    padding:2px;
+  }
+  .aiRow{
+    display:flex; align-items:center; gap:10px; text-align:left;
+    border:1.5px solid var(--edge-2); background:var(--bg2); color:var(--ink-hi);
+    border-radius:10px; padding:8px 11px; font-weight:700; font-size:13.5px;
+  }
+  .aiRow .dot{width:12px; height:12px; border-radius:50%; flex:0 0 auto; box-shadow:0 0 0 1px rgba(255,255,255,.3)}
+  .aiRow .nm{min-width:74px}
+  .aiRow .meta{flex:1; font-size:11.5px; font-weight:600; color:var(--ink-lo)}
+  .aiRow .crew{font-size:12px; font-weight:800; color:var(--ink-lo)}
+  .aiRow[aria-pressed="true"]{border-color:var(--amber); background:rgba(255,178,36,.13)}
+  .aiRow[aria-pressed="true"] .crew{color:var(--amber)}
+  .aiRow.have{opacity:.4}
+  .aiRow.have .nm{text-decoration:line-through}
+  .aiOpt{
+    display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--ink-hi);
+    border:1px solid var(--edge); border-radius:9px; padding:8px 11px; background:transparent; text-align:left;
+  }
+  .aiOpt::before{content:""; width:14px; height:14px; border-radius:4px; border:1.5px solid var(--edge-2); flex:0 0 auto}
+  .aiOpt[aria-pressed="true"]::before{background:var(--amber); border-color:var(--amber)}
+  #aiStatus{min-height:16px}
+  #aiStatus.err{color:#FF7A64}
+  #aiKeyIn,#aiModelIn{
+    background:var(--bg2); border:1px solid var(--edge-2); border-radius:9px;
+    padding:11px 12px; color:var(--ink-hi); font:inherit; font-weight:600; font-size:14px; width:100%;
+  }
+  #aiKeyIn:focus,#aiModelIn:focus{outline:none; border-color:var(--amber)}
+  .aiKeyLbl{font-size:11.5px; font-weight:700; color:var(--ink-lo); margin:0 0 -8px}
 
   /* ── 보드 목록 페이지 ── */
   #homePage{
@@ -732,7 +778,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.22</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.23</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -858,6 +904,8 @@
   <div class="trayLabel"><span class="t">미배치</span><span class="c" id="trayCount">0</span></div>
   <button id="addChip" aria-label="말 추가">＋</button>
   <button id="presetBtn">프리셋</button>
+  <button id="aiBtn" title="출동지령서 사진을 찍으면 출동대 말을 자동으로 만듭니다">📷 지령서</button>
+  <input type="file" id="aiFile" accept="image/*" capture="environment" hidden>
   <div class="laneBody" id="tray" data-lane="미배치"></div>
 </footer>
 
@@ -978,6 +1026,41 @@
       <span class="grow"></span>
       <button class="btn" id="rdCancel">취소</button>
       <button class="btn primary" id="rdLog">기록</button>
+    </div>
+  </div>
+</div>
+
+<div id="aiModal" hidden>
+  <div class="chipCard presetCard">
+    <h3>출동지령서 인식</h3>
+    <p class="presetSub" id="aiStatus"></p>
+    <div class="aiInfo" id="aiInfo"></div>
+    <div class="aiList" id="aiList"></div>
+    <div id="aiOpts" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div class="chipActions">
+      <button class="btn" id="aiKeyBtn">API 설정</button>
+      <button class="btn" id="aiRetry" hidden>다른 사진</button>
+      <span class="grow"></span>
+      <button class="btn" id="aiClose">닫기</button>
+      <button class="btn primary" id="aiAdd" disabled>추가 <span id="aiN">0</span></button>
+    </div>
+  </div>
+</div>
+
+<div id="aiKeyModal" hidden>
+  <div class="chipCard">
+    <h3>지령서 인식 API 설정</h3>
+    <p class="presetSub">Anthropic API 키는 이 기기의 브라우저에만 저장됩니다(서버·코드 저장소에 올라가지 않음). 지령서 사진은 인식을 위해 Anthropic API로 직접 전송됩니다.</p>
+    <p class="aiKeyLbl">API 키</p>
+    <input id="aiKeyIn" type="password" placeholder="sk-ant-…" spellcheck="false" autocomplete="off">
+    <p class="aiKeyLbl">모델 (비우면 기본값 claude-opus-5)</p>
+    <input id="aiModelIn" placeholder="claude-opus-5" spellcheck="false" autocomplete="off">
+    <p class="presetSub" id="aiKeyMsg" hidden></p>
+    <div class="chipActions">
+      <button class="btn" id="aiKeyDel">키 삭제</button>
+      <span class="grow"></span>
+      <button class="btn" id="aiKeyClose">닫기</button>
+      <button class="btn primary" id="aiKeySave">저장</button>
     </div>
   </div>
 </div>
@@ -3111,6 +3194,284 @@
     if(e.target===presetModal) closePreset();
   });
   document.getElementById("presetBtn").addEventListener("click",openPreset);
+
+  /* ── 출동지령서 인식: 지령서 사진 → Claude API(비전) → 출동대 말 자동 생성 (V2.23)
+        · API 키는 이 기기 localStorage에만 저장 (공개 저장소/페이지에 노출되지 않음)
+        · 이미지는 긴 변 2400px JPEG로 줄여 base64로 직접 전송(브라우저 → api.anthropic.com)
+        · 구조화 출력(json_schema)으로 출동대 목록을 받아 프리셋 이름으로 매핑 → 확인 후 트레이에 추가 ── */
+  var AI_KEY_K="fireboard-ai-key", AI_MODEL_K="fireboard-ai-model", AI_MODEL_DEF="claude-opus-5";
+  function aiKey(){ try{ return localStorage.getItem(AI_KEY_K)||""; }catch(e){ return ""; } }
+  function aiModel(){ try{ return localStorage.getItem(AI_MODEL_K)||AI_MODEL_DEF; }catch(e){ return AI_MODEL_DEF; } }
+  var aiModal=document.getElementById("aiModal");
+  var aiKeyModal=document.getElementById("aiKeyModal");
+  var aiStatus=document.getElementById("aiStatus");
+  var aiInfo=document.getElementById("aiInfo");
+  var aiList=document.getElementById("aiList");
+  var aiOpts=document.getElementById("aiOpts");
+  var aiAdd=document.getElementById("aiAdd");
+  var aiN=document.getElementById("aiN");
+  var aiRetry=document.getElementById("aiRetry");
+  var aiFile=document.getElementById("aiFile");
+  var aiKeyIn=document.getElementById("aiKeyIn");
+  var aiModelIn=document.getElementById("aiModelIn");
+  var aiKeyMsg=document.getElementById("aiKeyMsg");
+  var aiRows=[];          /* {u, name, c, custom, have, on} */
+  var aiIncident=null;    /* 모델이 읽은 사건 정보 */
+  var aiOptState={title:false, addr:false};
+  var aiPendingPick=false; /* 키 저장 후 바로 사진 선택 이어가기 */
+
+  var AI_SYSTEM=
+    "당신은 한국 소방 출동지령서(출동지령 문자·화면 캡처·종이 지령서 사진)를 읽어 구조화 데이터로 정확히 옮기는 도우미입니다. "+
+    "사진이 회전·기울어짐·흐림 상태여도 내용을 최대한 읽습니다. "+
+    "규칙: (1) 지령서에 적힌 모든 출동대(관할 센터·타 119안전센터·구조대·구급대·지휘차·특수차 등, 표가 여러 개면 전부)를 한 대씩 units에 넣습니다. "+
+    "(2) '펌프5,탱크3,구조1…' 같은 합계·요약 줄은 units에 넣지 않습니다. "+
+    "(3) station은 센터/관서 이름만(예: 성남, 삼산, 남부, 중부 — '119안전센터'·'소방서'·'구조대' 같은 접미어와 '울산' 같은 지역명은 뺍니다). "+
+    "(4) vehicle은 차량명 원문(예: 성남펌프, 삼산물탱크, ★삼산2선구급, 남부구조버스, 중부 지휘1선). "+
+    "(5) kind는 차종: 펌프(펌프차), 탱크(물탱크차), 구급, 구조(구조버스·구조공작차 포함), 사다리(고가사다리·소형사다리·고가차), 굴절(굴절차), 화학, 조연(조명·배연), 약제(소화약제), 무인(무인파괴방수), 음압(음압구급차), 지휘(지휘차), 그 외는 기타. "+
+    "(6) number는 '1선/2선/1호' 같은 선 번호(없으면 0), crew는 탑승 인원 수(없으면 0). "+
+    "(7) incident: type은 재난 종류(예: 화재(1차출동), 구조, 구급), address는 주소(도로명·지번 모두 있으면 도로명 우선, 없으면 빈 문자열), report는 신고내용 요약, title은 사건명으로 쓸 20자 이내 짧은 제목(예: 화재 태화강엑소디움). "+
+    "확실하지 않은 글자는 가장 그럴듯하게 읽되 지어내지 않습니다.";
+  var AI_SCHEMA={
+    type:"object", additionalProperties:false, required:["incident","units"],
+    properties:{
+      incident:{type:"object", additionalProperties:false, required:["type","address","report","title"],
+        properties:{type:{type:"string"}, address:{type:"string"}, report:{type:"string"}, title:{type:"string"}}},
+      units:{type:"array", items:{type:"object", additionalProperties:false,
+        required:["station","vehicle","kind","number","crew"],
+        properties:{
+          station:{type:"string", description:"센터/관서 이름만 (예: 성남, 삼산, 남부, 중부)"},
+          vehicle:{type:"string", description:"차량명 원문"},
+          kind:{type:"string", enum:["펌프","탱크","구급","구조","사다리","굴절","화학","조연","약제","무인","음압","지휘","기타"]},
+          number:{type:"integer", description:"선 번호, 없으면 0"},
+          crew:{type:"integer", description:"탑승 인원, 없으면 0"}
+        }}}
+    }
+  };
+  var AI_KIND_SUF={"펌프":"P","탱크":"T","구급":"구급","구조":"구조","사다리":"사다리","굴절":"굴절",
+                   "화학":"화학","조연":"조연","약제":"약제","무인":"무인","음압":"음압","지휘":"지휘"};
+
+  function aiSetStatus(t,err){ aiStatus.textContent=t||""; aiStatus.classList.toggle("err",!!err); }
+  function aiKeyShow(t){ aiKeyMsg.textContent=t; aiKeyMsg.hidden=!t; }
+  function openAiKey(){
+    aiKeyIn.value=aiKey(); aiModelIn.value=(aiModel()===AI_MODEL_DEF?"":aiModel());
+    aiKeyShow(aiKey()?"":"먼저 API 키를 저장하세요. 키는 console.anthropic.com에서 발급합니다.");
+    aiKeyModal.hidden=false; aiKeyIn.focus();
+  }
+  document.getElementById("aiKeyBtn").addEventListener("click",openAiKey);
+  document.getElementById("aiKeyClose").addEventListener("click",function(){ aiKeyModal.hidden=true; aiPendingPick=false; });
+  document.getElementById("aiKeyDel").addEventListener("click",function(){
+    try{ localStorage.removeItem(AI_KEY_K); localStorage.removeItem(AI_MODEL_K); }catch(e){}
+    aiKeyIn.value=""; aiModelIn.value=""; aiKeyShow("이 기기에서 키를 삭제했습니다");
+  });
+  document.getElementById("aiKeySave").addEventListener("click",function(){
+    var k=aiKeyIn.value.trim(), m=aiModelIn.value.trim();
+    if(!k){ aiKeyShow("API 키를 입력하세요"); aiKeyIn.focus(); return; }
+    try{ localStorage.setItem(AI_KEY_K,k); if(m) localStorage.setItem(AI_MODEL_K,m); else localStorage.removeItem(AI_MODEL_K); }catch(e){}
+    aiKeyModal.hidden=true;
+    if(aiPendingPick){ aiPendingPick=false; aiFile.value=""; aiFile.click(); }
+  });
+  aiKeyModal.addEventListener("pointerdown",function(e){ if(e.target===aiKeyModal){ aiKeyModal.hidden=true; aiPendingPick=false; } });
+
+  document.getElementById("aiBtn").addEventListener("click",function(){
+    if(!aiKey()){ aiPendingPick=true; openAiKey(); return; }
+    aiFile.value=""; aiFile.click();
+  });
+  aiRetry.addEventListener("click",function(){ aiFile.value=""; aiFile.click(); });
+  document.getElementById("aiClose").addEventListener("click",function(){ aiModal.hidden=true; });
+  aiModal.addEventListener("pointerdown",function(e){ if(e.target===aiModal) aiModal.hidden=true; });
+
+  /* 이미지 → 긴 변 2400px JPEG base64 (글자 판독을 위해 해상도는 넉넉히) */
+  function aiPrepImage(file){
+    return new Promise(function(res,rej){
+      var rd=new FileReader();
+      rd.onerror=function(){ rej(new Error("파일을 읽지 못했습니다")); };
+      rd.onload=function(){
+        var im=new Image();
+        im.onerror=function(){ rej(new Error("이미지를 열지 못했습니다")); };
+        im.onload=function(){
+          var MAX=2400, sc=Math.min(1, MAX/Math.max(im.naturalWidth,im.naturalHeight));
+          var c=document.createElement("canvas");
+          c.width=Math.round(im.naturalWidth*sc); c.height=Math.round(im.naturalHeight*sc);
+          c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+          var d=c.toDataURL("image/jpeg",0.85);
+          res(d.slice(d.indexOf(",")+1));
+        };
+        im.src=rd.result;
+      };
+      rd.readAsDataURL(file);
+    });
+  }
+  /* Claude Messages API 호출 (구조화 출력). fallbacks 베타가 거부되면 한 번 빼고 재시도 */
+  function aiCall(b64, useFallback){
+    var body={
+      model:aiModel(), max_tokens:16000,
+      system:AI_SYSTEM,
+      messages:[{role:"user", content:[
+        {type:"image", source:{type:"base64", media_type:"image/jpeg", data:b64}},
+        {type:"text", text:"이 출동지령서를 읽어 사건 정보와 출동대 목록을 추출하세요."}
+      ]}],
+      output_config:{format:{type:"json_schema", schema:AI_SCHEMA}}
+    };
+    var hdr={
+      "content-type":"application/json",
+      "x-api-key":aiKey(),
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    };
+    if(useFallback){ body.fallbacks="default"; hdr["anthropic-beta"]="server-side-fallback-2026-07-01"; }
+    return fetch("https://api.anthropic.com/v1/messages",{method:"POST", headers:hdr, body:JSON.stringify(body)})
+      .then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(j){
+          if(!r.ok){
+            var msg=(j&&j.error&&j.error.message)||("HTTP "+r.status);
+            if(r.status===400 && useFallback) return aiCall(b64,false);
+            if(r.status===401) msg="API 키가 올바르지 않습니다 (API 설정에서 확인)";
+            if(r.status===429) msg="요청 한도 초과 — 잠시 후 다시 시도하세요";
+            if(r.status===529) msg="API 서버 혼잡 — 잠시 후 다시 시도하세요";
+            throw new Error(msg);
+          }
+          return j;
+        });
+      });
+  }
+  /* 모델 출력 → 프리셋 이름 매핑 */
+  function aiNormSt(st){
+    return (st||"").replace(/[★☆\s()]/g,"")
+      .replace(/^울산/,"")
+      .replace(/119안전센터|안전센터|소방서|구조대|구급대|센터|지휘대|고가차|굴절차|지휘차/g,"");
+  }
+  function aiSuffix(u){
+    var suf=AI_KIND_SUF[u.kind];
+    if(suf) return suf;
+    var v=(u.vehicle||"");
+    var keys=Object.keys(AI_KIND_SUF);
+    for(var i=0;i<keys.length;i++){ if(v.indexOf(keys[i])>=0) return AI_KIND_SUF[keys[i]]; }
+    if(/물탱크|탱크/.test(v)) return "T";
+    if(/펌프/.test(v)) return "P";
+    if(/사다리|고가/.test(v)) return "사다리";
+    return null;
+  }
+  function aiMatch(u, have){
+    var st=aiNormSt(u.station);
+    if(!st){ /* station이 비면 차량명 앞부분에서 추정 */
+      var mm=(u.vehicle||"").replace(/[★☆\s]/g,"").match(/^(.{1,4}?)(펌프|물탱크|탱크|구급|구조|사다리|고가|굴절|화학|조연|약제|무인|음압|지휘)/);
+      st=mm?mm[1]:"";
+    }
+    var suf=aiSuffix(u);
+    if(!st||!suf) return {name:(u.vehicle||"출동대").replace(/[★☆\s]/g,"").slice(0,8), c:"gray", custom:true};
+    var all=[]; PRESETS.forEach(function(p){ p.units.forEach(function(n){ all.push({n:n,c:p.c}); }); });
+    var re=new RegExp("^"+suf+"\\d*$");
+    var cands=all.filter(function(x){ return x.n.slice(0,st.length)===st && re.test(x.n.slice(st.length)); });
+    if(cands.length){
+      if(u.number){ var ex=cands.filter(function(x){ return x.n===st+suf+u.number; })[0]; if(ex) return {name:ex.n,c:ex.c}; }
+      var free=cands.filter(function(x){ return !have[x.n]; });
+      var pick=(free.length?free:cands)[0];
+      return {name:pick.n, c:pick.c};
+    }
+    /* 프리셋에 없는 조합 — 관서 색상은 같은 접두 관서에서 빌리고, 없으면 회색 */
+    var col="gray";
+    for(var i=0;i<all.length;i++){ if(all[i].n.slice(0,st.length)===st){ col=all[i].c; break; } }
+    return {name:st+suf+(u.number||""), c:col, custom:true};
+  }
+  function aiRenderRows(){
+    aiList.textContent="";
+    var n=0;
+    aiRows.forEach(function(r){
+      var b=document.createElement("button");
+      b.className="aiRow"+(r.have?" have":"");
+      b.setAttribute("aria-pressed", r.on?"true":"false");
+      var dot=document.createElement("span"); dot.className="dot"; dot.style.background=COLOR_HEX[r.c]||COLOR_HEX.gray;
+      var nm=document.createElement("span"); nm.className="nm"; nm.textContent=r.name;
+      var meta=document.createElement("span"); meta.className="meta";
+      meta.textContent=(r.u.vehicle||"")+(r.custom?" · 프리셋 없음(새 말)":"")+(r.have?" · 이미 있음":"");
+      var cw=document.createElement("span"); cw.className="crew"; cw.textContent=r.u.crew?r.u.crew+"명":"";
+      b.appendChild(dot); b.appendChild(nm); b.appendChild(meta); b.appendChild(cw);
+      if(r.have){ b.disabled=true; }
+      else b.addEventListener("click",function(){ r.on=!r.on; b.setAttribute("aria-pressed", r.on?"true":"false"); aiCount(); });
+      aiList.appendChild(b);
+      if(r.on) n++;
+    });
+    aiCount();
+  }
+  function aiCount(){
+    var n=aiRows.filter(function(r){ return r.on; }).length;
+    aiN.textContent=n;
+    aiAdd.disabled=!(n||aiOptState.title||aiOptState.addr);
+  }
+  function aiRenderInfo(){
+    aiInfo.textContent=""; aiOpts.textContent="";
+    var inc=aiIncident||{};
+    function line(k,v){ if(!v) return; var d=document.createElement("div"); var b=document.createElement("b"); b.textContent=k; d.appendChild(b); d.appendChild(document.createTextNode(v)); aiInfo.appendChild(d); }
+    line("종류",inc.type); line("주소",inc.address); line("신고",inc.report);
+    aiOptState={title:false, addr:false};
+    if(inc.title && !incidentEl.textContent.trim()){
+      aiOptState.title=true;
+      var o1=document.createElement("button"); o1.className="aiOpt"; o1.setAttribute("aria-pressed","true");
+      o1.textContent="사건명 채우기: "+inc.title;
+      o1.addEventListener("click",function(){ aiOptState.title=!aiOptState.title; o1.setAttribute("aria-pressed",aiOptState.title?"true":"false"); aiCount(); });
+      aiOpts.appendChild(o1);
+    }
+    if(inc.address){
+      var o2=document.createElement("button"); o2.className="aiOpt"; o2.setAttribute("aria-pressed","false");
+      o2.textContent="주소로 지도 검색: "+inc.address;
+      o2.addEventListener("click",function(){ aiOptState.addr=!aiOptState.addr; o2.setAttribute("aria-pressed",aiOptState.addr?"true":"false"); aiCount(); });
+      aiOpts.appendChild(o2);
+    }
+  }
+  aiFile.addEventListener("change",function(){
+    var f=aiFile.files&&aiFile.files[0];
+    if(!f) return;
+    aiRows=[]; aiIncident=null; aiList.textContent=""; aiInfo.textContent=""; aiOpts.textContent="";
+    aiAdd.disabled=true; aiN.textContent="0"; aiRetry.hidden=true;
+    aiSetStatus("지령서를 읽는 중… (수십 초 걸릴 수 있습니다)");
+    aiModal.hidden=false;
+    aiPrepImage(f).then(function(b64){ return aiCall(b64,true); }).then(function(j){
+      if(j.stop_reason==="refusal") throw new Error("모델이 이 이미지 처리를 거부했습니다 — 다른 사진으로 다시 시도하세요");
+      if(j.stop_reason==="max_tokens") throw new Error("출력이 잘렸습니다 — 다시 시도하세요");
+      var txt=""; (j.content||[]).forEach(function(b){ if(b.type==="text") txt+=b.text; });
+      var data; try{ data=JSON.parse(txt); }catch(e){ throw new Error("응답을 해석하지 못했습니다"); }
+      aiIncident=data.incident||{};
+      var have=existingNames();
+      var seen={};
+      (data.units||[]).forEach(function(u){
+        var m=aiMatch(u,have);
+        var name=m.name;
+        /* 같은 이름이 두 번 나오면(프리셋에 번호 없는 이름) 뒤에 번호를 붙여 구분 */
+        if(seen[name]||have[name]&&!m.custom){
+          if(seen[name]){ var k=2; while(seen[name+k]||have[name+k]) k++; name=name+k; }
+        }
+        seen[name]=1;
+        aiRows.push({u:u, name:name, c:m.c, custom:!!m.custom, have:!!have[name], on:!have[name]});
+      });
+      aiRenderInfo(); aiRenderRows();
+      aiSetStatus(aiRows.length ? "출동대 "+aiRows.length+"대를 읽었습니다 — 추가할 말을 확인하고 '추가'를 누르세요 (탭하면 제외/포함)"
+                                : "출동대를 찾지 못했습니다 — 표가 잘 보이게 다시 찍어 보세요");
+      aiRetry.hidden=false;
+    }).catch(function(err){
+      aiSetStatus("인식 실패: "+(err&&err.message||err), true);
+      aiRetry.hidden=false;
+    });
+  });
+  aiAdd.addEventListener("click",function(){
+    var have=existingNames(), n=0;
+    aiRows.forEach(function(r){
+      if(!r.on||have[r.name]) return;
+      var chip=createChip(r.name,r.c);
+      if(r.u.crew) chip.dataset.crew="탑승 "+r.u.crew+"명";
+      tray.appendChild(chip); have[r.name]=1; n++;
+    });
+    var inc=aiIncident||{};
+    if(aiOptState.title && inc.title){ incidentEl.textContent=inc.title; }
+    if(n||aiOptState.title){
+      log("지령서 인식: 출동대 "+n+"대 추가"+(inc.type?" ("+inc.type+")":""));
+      refreshCounts(); scheduleSave();
+    }
+    aiModal.hidden=true;
+    if(aiOptState.addr && inc.address){
+      searchInput.value=inc.address; searchResults.textContent=""; searchMsg.hidden=true;
+      searchModal.hidden=false; doSearch();
+    }
+  });
 
   /* ── 사건명·우선순위 복원 + 입력 시 저장 ── */
   var incidentEl=document.querySelector(".incident");
