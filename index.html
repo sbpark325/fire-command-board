@@ -124,6 +124,15 @@
     box-shadow:0 1px 3px rgba(0,0,0,.3);
   }
   #shapeXLayer .sx:active{background:var(--red); border-color:var(--red); color:#fff}
+  #shapeXLayer .sm{
+    position:absolute; transform:translate(-50%,-50%);
+    width:20px; height:20px; padding:0; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; border:1px solid rgba(0,0,0,.35);
+    background:#fff; color:#22262A; font-size:12px; line-height:1; font-weight:800;
+    box-shadow:0 1px 3px rgba(0,0,0,.3); cursor:move;
+  }
+  #shapeXLayer .sm:active{background:var(--amber); border-color:var(--amber)}
   #shapeXLayer .sh{
     position:absolute; transform:translate(-50%,-50%);
     width:22px; height:22px; padding:0; pointer-events:auto; touch-action:none;
@@ -199,6 +208,11 @@
   .optDot[aria-pressed="true"]{background:rgba(255,255,255,.13); box-shadow:inset 0 0 0 1.5px var(--amber)}
   .optDot.wd .c{background:#fff; box-shadow:none}
   .optDot.er .c{background:transparent; border:1.5px solid #fff; box-shadow:none}
+  .optMode{
+    border:none; background:transparent; color:var(--ink-hi); border-radius:9px;
+    padding:7px 11px; font-weight:700; font-size:12px;
+  }
+  .optMode[aria-pressed="true"]{background:rgba(255,255,255,.13); box-shadow:inset 0 0 0 1.5px var(--amber)}
 
   /* 도형 선택 팝업 */
   .shapeMenu{
@@ -718,7 +732,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.16</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.17</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -754,7 +768,6 @@
       <button data-tool="pan" aria-pressed="false">이동</button>
       <button data-tool="pen" aria-pressed="true">펜</button>
       <button data-tool="erase" aria-pressed="false">지우개</button>
-      <button data-tool="strokeDel" aria-pressed="false">획삭제</button>
       <button data-tool="note" aria-pressed="false">메모</button>
       <button id="shapeBtn" aria-expanded="false" aria-pressed="false">도형 ▾</button>
       <button id="photoBtn">사진</button>
@@ -767,6 +780,11 @@
       <div class="optGroup" id="optColors"></div>
       <span class="sep" id="optSep"></span>
       <div class="optGroup" id="optWidths"></div>
+      <div class="optGroup" id="optEraseMode" hidden>
+        <button class="optMode" data-em="pixel" aria-pressed="true">부분 지우기</button>
+        <button class="optMode" data-em="stroke" aria-pressed="false">획 지우기</button>
+      </div>
+      <span class="sep" id="optSep2" hidden></span>
       <div class="optGroup" id="optErase" hidden></div>
     </div>
     <div class="shapeMenu" id="shapeMenu" hidden>
@@ -1725,6 +1743,7 @@
   var PEN_WIDTHS=[2,3.5,6];
   var ERASE_WIDTHS=[14,28,56];
   var penColor=PEN_COLORS[0], penWidth=PEN_WIDTHS[1], eraseW=ERASE_WIDTHS[1];
+  var eraseMode="pixel";   /* 지우개 모드: pixel(부분) | stroke(획 통째) */
   var pointers=new Map(), nav=null;
 
   function resize(){
@@ -1945,7 +1964,18 @@
     return [e.clientX-r.left, e.clientY-r.top];
   }
   /* 데스크톱 마우스: 가운데/오른쪽 버튼 드래그 = 화면 이동 / 이동 도구용 단일 포인터 팬 */
-  var mousePan=null, panStart=null, pendingNoteAt=null;
+  var mousePan=null, panStart=null, pendingNoteAt=null, strokeErasing=false;
+  function strokeEraseAt(w){
+    var best=-1, bestD=12/view.s;
+    strokes.forEach(function(k,i){
+      if(k.type!=="free"||k.e) return;
+      for(var j=0;j<k.pts.length;j++){
+        var d=Math.hypot(k.pts[j][0]-w[0], k.pts[j][1]-w[1]);
+        if(d<bestD){ bestD=d; best=i; }
+      }
+    });
+    if(best>-1){ strokes.splice(best,1); log("펜 획 삭제"); redraw(); rebuildShapeX(); scheduleSave(); }
+  }
 
   /* 메모(말풍선) 입력 모달 */
   var noteModal=document.getElementById("noteModal");
@@ -1993,17 +2023,9 @@
         e.preventDefault();
         return;
       }
-      if(tool==="strokeDel"){
-        /* 획삭제: 탭 지점에서 가장 가까운 펜 획을 통째로 제거 (화면 12px 이내) */
-        var best=-1, bestD=12/view.s;
-        strokes.forEach(function(k,i){
-          if(k.type!=="free"||k.e) return;
-          for(var j=0;j<k.pts.length;j++){
-            var d=Math.hypot(k.pts[j][0]-w[0], k.pts[j][1]-w[1]);
-            if(d<bestD){ bestD=d; best=i; }
-          }
-        });
-        if(best>-1){ strokes.splice(best,1); log("펜 획 삭제"); redraw(); rebuildShapeX(); scheduleSave(); }
+      if(tool==="erase"&&eraseMode==="stroke"){
+        /* 획 지우기: 누르거나 쓸고 지나간 펜 획을 통째로 제거 (드래그로 여러 획 가능) */
+        strokeEraseAt(w); strokeErasing=true;
         cur=null; e.preventDefault();
         return;
       }
@@ -2036,6 +2058,10 @@
       applyView();
       return;
     }
+    if(strokeErasing && pointers.size<2){
+      var p0=localXY(e); strokeEraseAt(s2w(p0[0],p0[1]));
+      return;
+    }
     if(panStart && tool==="pan" && pointers.size<2){
       view.tx=panStart.tx+(e.clientX-panStart.x);
       view.ty=panStart.ty+(e.clientY-panStart.y);
@@ -2066,7 +2092,7 @@
     pointers.delete(e.pointerId);
     if(pointers.size<2) nav=null;
     if(pointers.size===0){
-      panStart=null;
+      panStart=null; strokeErasing=false;
       if(pendingNoteAt){
         openNoteModal(pendingNoteAt);
         pendingNoteAt=null;
@@ -2120,6 +2146,38 @@
         redraw(); rebuildShapeX(); scheduleSave();
       });
       shapeXLayer.appendChild(b);
+      /* 이동 핸들(✥): 끌면 도형 전체 이동 — X 왼쪽에 배치 */
+      (function(){
+        var mvb=document.createElement("button");
+        mvb.className="sm"; mvb.textContent="✥";
+        mvb.setAttribute("aria-label","도형 이동");
+        mvb.style.left=(a[0]*view.s+view.tx-24)+"px";
+        mvb.style.top =(a[1]*view.s+view.ty)+"px";
+        mvb.addEventListener("pointerdown",function(e){
+          e.stopPropagation(); e.preventDefault();
+          try{ mvb.setPointerCapture(e.pointerId); }catch(err){}
+          var p0=localXY(e), w0=s2w(p0[0],p0[1]);
+          var snap=JSON.parse(JSON.stringify({at:s.at||null,a:s.a||null,b:s.b||null}));
+          function mv(ev){
+            var p=localXY(ev), w=s2w(p[0],p[1]);
+            var dx=w[0]-w0[0], dy=w[1]-w0[1];
+            if(snap.at) s.at=[snap.at[0]+dx, snap.at[1]+dy];
+            if(snap.a)  s.a =[snap.a[0]+dx,  snap.a[1]+dy];
+            if(snap.b&&s.type!=="img") s.b=[snap.b[0]+dx, snap.b[1]+dy];
+            redraw();
+          }
+          function up(){
+            mvb.removeEventListener("pointermove",mv);
+            mvb.removeEventListener("pointerup",up);
+            mvb.removeEventListener("pointercancel",up);
+            rebuildShapeX(); scheduleSave();
+          }
+          mvb.addEventListener("pointermove",mv);
+          mvb.addEventListener("pointerup",up);
+          mvb.addEventListener("pointercancel",up);
+        });
+        shapeXLayer.appendChild(mvb);
+      })();
       /* 사각형·건물·화살표: 끝점(b) 드래그 핸들로 크기 조절 */
       if(s.type==="rect"||s.type==="building"||s.type==="arrow"||(s.type==="img"&&s.b)){
         var h=document.createElement("button");
@@ -2249,6 +2307,8 @@
       b.setAttribute("aria-pressed", parseFloat(b.dataset.v)===eraseW ? "true":"false");
     });
   }
+  var optEraseMode=document.getElementById("optEraseMode");
+  var optSep2=document.getElementById("optSep2");
   function refreshToolOpts(){
     var isDraw=(tool==="pen"||tool==="arrow"||tool==="rect"||tool==="building");
     var isErase=(tool==="erase");
@@ -2256,8 +2316,17 @@
     optColors.hidden=!isDraw;
     optWidths.hidden=!isDraw;
     optSep.hidden=!isDraw;
-    optErase.hidden=!isErase;
+    optEraseMode.hidden=!isErase;
+    /* 획 지우기 모드에선 크기 선택이 무의미 → 숨김 */
+    optErase.hidden=!(isErase&&eraseMode==="pixel");
+    optSep2.hidden=!(isErase&&eraseMode==="pixel");
+    optEraseMode.querySelectorAll(".optMode").forEach(function(b){
+      b.setAttribute("aria-pressed", b.dataset.em===eraseMode?"true":"false");
+    });
   }
+  optEraseMode.querySelectorAll(".optMode").forEach(function(b){
+    b.addEventListener("click",function(){ eraseMode=b.dataset.em; refreshToolOpts(); });
+  });
   PEN_COLORS.forEach(function(c){
     var b=document.createElement("button");
     b.className="optDot"; b.dataset.v=c; b.setAttribute("aria-label","펜 색상");
