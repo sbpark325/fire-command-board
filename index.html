@@ -732,7 +732,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.21</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.22</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1721,7 +1721,7 @@
               var mk={type:"marker", at:[m.x-O.x, m.y-O.y], t:name};
               strokes.push(mk);
               redraw(); scheduleSave();
-              setTool("pan"); selectShape(mk);
+              selectShape(mk);
             }
             log("지도 이동: "+name);
             searchModal.hidden=true;
@@ -2000,7 +2000,7 @@
     log("메모 추가: "+(t.length>20?t.slice(0,20)+"…":t));
     redraw(); scheduleSave();
     closeNoteModal();
-    setTool("pan"); selectShape(noteObj);
+    selectShape(noteObj);
   });
   cv.addEventListener("contextmenu",function(e){ e.preventDefault(); });
   cv.addEventListener("pointerdown",function(e){
@@ -2117,8 +2117,8 @@
       if(finished){
         redraw();
         if(finished.type!=="free"){
-          /* 도형·심볼을 놓은 직후엔 바로 위치를 잡을 수 있게 선택 + 이동 도구로 전환 */
-          setTool("pan"); selectShape(finished);
+          /* 도형·심볼을 놓은 직후엔 그 도형만 선택 — 몸체를 끌면 이동, 빈 곳은 계속 그리기 */
+          selectShape(finished);
         }else rebuildShapeX();
       }
       flushRemote();   /* 그리는 중 보류해 둔 원격 갱신 적용 */
@@ -2308,8 +2308,9 @@
     shapeMenu.hidden=true; shapeBtn.setAttribute("aria-expanded","false");
   }
   function setTool(t){
+    var changed=(tool!==t);
     tool=t;
-    if(t!=="pan") deselectShape();
+    if(t!=="pan" && changed) deselectShape();
     var isShape=!!SHAPE_NAMES[t];
     document.querySelectorAll(".tools [data-tool]").forEach(function(b){
       b.setAttribute("aria-pressed", b.dataset.tool===t ? "true":"false");
@@ -2356,7 +2357,7 @@
         strokes.push(imgObj);
         log("사진 첨부: "+(f.name||"이미지"));
         redraw(); scheduleSave();
-        setTool("pan"); selShape=imgObj;   /* 로드 완료 시 onload→rebuildShapeX가 핸들 배치 */
+        selShape=imgObj;   /* 로드 완료 시 onload→rebuildShapeX가 핸들 배치 */
       };
       im.src=rd.result;
     };
