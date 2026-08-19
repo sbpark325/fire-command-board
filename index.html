@@ -732,7 +732,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.20</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.21</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1718,8 +1718,10 @@
             /* 찾은 위치에 마커 표시 (X로 삭제 가능) */
             var O=geoOrg(), m=merc(lat, lon);
             if(O){
-              strokes.push({type:"marker", at:[m.x-O.x, m.y-O.y], t:name});
-              redraw(); rebuildShapeX(); scheduleSave();
+              var mk={type:"marker", at:[m.x-O.x, m.y-O.y], t:name};
+              strokes.push(mk);
+              redraw(); scheduleSave();
+              setTool("pan"); selectShape(mk);
             }
             log("지도 이동: "+name);
             searchModal.hidden=true;
@@ -1993,10 +1995,12 @@
   document.getElementById("noteOk").addEventListener("click",function(){
     var t=noteText.value.trim();
     if(!t){ noteText.focus(); return; }
-    strokes.push({type:"note", at:noteAt, t:t});
+    var noteObj={type:"note", at:noteAt, t:t};
+    strokes.push(noteObj);
     log("메모 추가: "+(t.length>20?t.slice(0,20)+"…":t));
-    redraw(); rebuildShapeX(); scheduleSave();
+    redraw(); scheduleSave();
     closeNoteModal();
+    setTool("pan"); selectShape(noteObj);
   });
   cv.addEventListener("contextmenu",function(e){ e.preventDefault(); });
   cv.addEventListener("pointerdown",function(e){
@@ -2110,7 +2114,13 @@
         scheduleSave();
       }
       cur=null;
-      if(finished){ redraw(); rebuildShapeX(); }   /* 확정 후 최종 렌더 */
+      if(finished){
+        redraw();
+        if(finished.type!=="free"){
+          /* 도형·심볼을 놓은 직후엔 바로 위치를 잡을 수 있게 선택 + 이동 도구로 전환 */
+          setTool("pan"); selectShape(finished);
+        }else rebuildShapeX();
+      }
       flushRemote();   /* 그리는 중 보류해 둔 원격 갱신 적용 */
     }
   }
@@ -2342,9 +2352,11 @@
         var r=wrap.getBoundingClientRect();
         var w0=s2w(r.width/2, r.height/2);
         var ww=Math.min(260, r.width*0.4)/view.s;
-        strokes.push({type:"img", at:[w0[0]-ww/2, w0[1]-ww/2], w:ww, src:src});
+        var imgObj={type:"img", at:[w0[0]-ww/2, w0[1]-ww/2], w:ww, src:src};
+        strokes.push(imgObj);
         log("사진 첨부: "+(f.name||"이미지"));
-        redraw(); rebuildShapeX(); scheduleSave();
+        redraw(); scheduleSave();
+        setTool("pan"); selShape=imgObj;   /* 로드 완료 시 onload→rebuildShapeX가 핸들 배치 */
       };
       im.src=rd.result;
     };
