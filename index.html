@@ -124,6 +124,14 @@
     box-shadow:0 1px 3px rgba(0,0,0,.3);
   }
   #shapeXLayer .sx:active{background:var(--red); border-color:var(--red); color:#fff}
+  #shapeXLayer .sh{
+    position:absolute; transform:translate(-50%,-50%);
+    width:22px; height:22px; padding:0; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; border:1.5px solid #fff;
+    background:var(--amber); color:var(--amber-ink); font-size:13px; line-height:1; font-weight:800;
+    box-shadow:0 1px 3px rgba(0,0,0,.35); cursor:nwse-resize;
+  }
 
   /* 줌 클러스터 (좌상단) */
   .zoom{
@@ -555,6 +563,12 @@
     background:rgba(0,0,0,.45);
   }
   #presetModal[hidden]{display:none}
+  #lanePickModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #lanePickModal[hidden]{display:none}
+  #lanePickGrid .puBtn{border-width:2px}
   .presetCard{width:min(640px,94vw); max-height:86vh}
   .presetSub{margin:-6px 0 0; font-size:12px; color:var(--ink-lo); font-weight:600}
   .stTabs{display:flex; gap:6px; flex-wrap:wrap}
@@ -638,6 +652,16 @@
     padding:11px 12px; color:var(--ink-hi); font:inherit; font-weight:700; font-size:15px;
   }
   #chipName:focus{outline:none; border-color:var(--amber)}
+  #chipCrew{
+    resize:none; background:var(--bg2); border:1px solid var(--edge-2); border-radius:9px;
+    padding:9px 12px; color:var(--ink-hi); font:inherit; font-weight:600; font-size:13px; line-height:1.5;
+  }
+  #chipCrew:focus{outline:none; border-color:var(--amber)}
+  /* 대원 등록된 말은 우하단 점 표시 */
+  .chip[data-crew]:not([data-crew=""])::after{
+    content:""; position:absolute; right:4px; bottom:4px; width:6px; height:6px;
+    border-radius:50%; background:#fff; opacity:.9;
+  }
   .swatches{display:flex; gap:10px}
   .swatch{
     width:36px; height:36px; border-radius:12px; padding:0;
@@ -694,7 +718,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.15</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.16</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -730,8 +754,11 @@
       <button data-tool="pan" aria-pressed="false">이동</button>
       <button data-tool="pen" aria-pressed="true">펜</button>
       <button data-tool="erase" aria-pressed="false">지우개</button>
+      <button data-tool="strokeDel" aria-pressed="false">획삭제</button>
       <button data-tool="note" aria-pressed="false">메모</button>
       <button id="shapeBtn" aria-expanded="false" aria-pressed="false">도형 ▾</button>
+      <button id="photoBtn">사진</button>
+      <input type="file" id="photoFile" accept="image/*" hidden>
       <span class="sep"></span>
       <button id="undoBtn">되돌리기</button>
       <button class="danger" id="clearBtn">전체 지우기</button>
@@ -820,6 +847,7 @@
   <div class="chipCard">
     <h3 id="chipModalTitle">말 편집</h3>
     <input id="chipName" placeholder="말 이름 (예: 병영P)" maxlength="10" spellcheck="false">
+    <textarea id="chipCrew" rows="3" placeholder="대원 명단 (예: 팀장 김○○, 반장 이○○, 대원 박○○) — 말을 탭하면 표시" spellcheck="false"></textarea>
     <div class="swatches" id="swatches">
       <button class="swatch blue" data-c="blue" aria-pressed="true" aria-label="파랑"></button>
       <button class="swatch red" data-c="red" aria-pressed="false" aria-label="빨강"></button>
@@ -834,6 +862,19 @@
       <span class="grow"></span>
       <button class="btn" id="chipCancel">취소</button>
       <button class="btn primary" id="chipSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<div id="lanePickModal" hidden>
+  <div class="chipCard presetCard">
+    <h3 id="lanePickTitle">배치할 말 선택</h3>
+    <p class="presetSub">미배치(대기) 말을 탭해 선택하면 이 칸으로 바로 배치됩니다</p>
+    <div class="puGrid" id="lanePickGrid"></div>
+    <div class="chipActions">
+      <span class="grow"></span>
+      <button class="btn" id="lanePickClose">닫기</button>
+      <button class="btn primary" id="lanePickAdd">배치 <span id="lanePickN">0</span></button>
     </div>
   </div>
 </div>
@@ -1360,7 +1401,7 @@
   }
   /* 기본: 우선순위·상태만 표시(기록·체크리스트·무전문은 꺼짐) —
      휴대폰(좁은 화면)에선 평면도만 보이게 전부 접고 시작 */
-  restoreCard("prio",!MOBILE);
+  restoreCard("prio",false);
   restoreCard("lane",!MOBILE);
   restoreCard("ck",false);
   restoreCard("rd",false);
@@ -1395,10 +1436,64 @@
         armTimer=setTimeout(function(){ del.classList.remove("arm"); del.textContent="삭제"; },2500);
       }
     });
+    /* 레인 빈 곳을 탭하면 대기(미배치) 말을 골라 바로 추가 */
+    body.addEventListener("click",function(e){
+      if(e.target!==body) return;      /* 말 위 탭은 편집/드래그가 담당 */
+      openLanePick(body);
+    });
     head.appendChild(title); head.appendChild(count); head.appendChild(del);
     lane.appendChild(head); lane.appendChild(body);
     return lane;
   }
+  /* 레인 말 선택 모달 */
+  var lanePickModal=document.getElementById("lanePickModal");
+  var lanePickGrid=document.getElementById("lanePickGrid");
+  var lanePickTitle=document.getElementById("lanePickTitle");
+  var lanePickTarget=null, lanePickSel={};
+  function openLanePick(body){
+    lanePickTarget=body; lanePickSel={};
+    lanePickTitle.textContent='"'+body.dataset.lane+'"에 배치할 말 선택';
+    renderLanePick();
+    lanePickModal.hidden=false;
+  }
+  function renderLanePick(){
+    lanePickGrid.textContent="";
+    var chips=tray.querySelectorAll(".chip");
+    if(!chips.length){
+      var em=document.createElement("p"); em.className="presetSub";
+      em.textContent="미배치(대기) 말이 없습니다 — 프리셋이나 ＋로 말을 추가하세요";
+      lanePickGrid.appendChild(em); return;
+    }
+    chips.forEach(function(c){
+      var name=c.dataset.name;
+      var b=document.createElement("button");
+      b.className="puBtn"; b.textContent=name;
+      b.style.borderColor=COLOR_HEX[chipColor(c)]||"";
+      b.setAttribute("aria-pressed", lanePickSel[name]?"true":"false");
+      b.addEventListener("click",function(){
+        if(lanePickSel[name]) delete lanePickSel[name]; else lanePickSel[name]=1;
+        b.setAttribute("aria-pressed", lanePickSel[name]?"true":"false");
+        document.getElementById("lanePickN").textContent=Object.keys(lanePickSel).length;
+      });
+      lanePickGrid.appendChild(b);
+    });
+    document.getElementById("lanePickN").textContent="0";
+  }
+  document.getElementById("lanePickAdd").addEventListener("click",function(){
+    if(!lanePickTarget) return;
+    var n=0;
+    tray.querySelectorAll(".chip").forEach(function(c){
+      if(lanePickSel[c.dataset.name]){
+        placeInFlow(c, lanePickTarget);
+        log(c.dataset.name+": 미배치 → "+lanePickTarget.dataset.lane);
+        n++;
+      }
+    });
+    if(n){ refreshCounts(); scheduleSave(); }
+    lanePickModal.hidden=true;
+  });
+  document.getElementById("lanePickClose").addEventListener("click",function(){ lanePickModal.hidden=true; });
+  lanePickModal.addEventListener("pointerdown",function(e){ if(e.target===lanePickModal) lanePickModal.hidden=true; });
   ((SAVED&&SAVED.lanes&&SAVED.lanes.length)?SAVED.lanes:LANES).forEach(function(n){
     laneList.appendChild(makeLane(n));
   });
@@ -1662,6 +1757,7 @@
     if(!d) return;
     ctx.save();
     ctx.translate(s.at[0], s.at[1]);
+    ctx.scale(1/view.s, 1/view.s);   /* 배율과 무관하게 화면상 크기 고정 */
     ctx.textAlign="center"; ctx.textBaseline="middle";
     if(d.letter){
       ctx.beginPath(); ctx.arc(0,0,16,0,7);
@@ -1682,6 +1778,7 @@
   function drawMarker(s){
     ctx.save();
     ctx.translate(s.at[0], s.at[1]);
+    ctx.scale(1/view.s, 1/view.s);   /* 화면상 크기 고정 */
     /* 핀: 꼬리 삼각형 + 머리 원 */
     ctx.beginPath();
     ctx.moveTo(0,0); ctx.lineTo(-7,-16); ctx.lineTo(7,-16); ctx.closePath();
@@ -1714,33 +1811,54 @@
   }
   function drawNote(s){
     ctx.save();
+    ctx.translate(s.at[0], s.at[1]);
+    ctx.scale(1/view.s, 1/view.s);   /* 화면상 크기 고정 */
     ctx.font="700 13px sans-serif";
     var lines=wrapNote(s.t||"", 170);
     var w=0;
     lines.forEach(function(l){ w=Math.max(w, ctx.measureText(l).width); });
     var pad=9, lh=17;
     var bw=w+pad*2, bh=lines.length*lh+pad*2-4;
-    var bx=s.at[0]+10, by=s.at[1]-bh-16;
+    var bx=10, by=-bh-16;
     /* 말풍선 본체 + 꼬리 */
     roundRectPath(bx, by, bw, bh, 9);
     ctx.fillStyle="#FFFBEA"; ctx.fill();
     ctx.lineWidth=1.5; ctx.strokeStyle="#3B3524"; ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(s.at[0]+2, s.at[1]);
+    ctx.moveTo(2, 0);
     ctx.lineTo(bx+8, by+bh-1);
     ctx.lineTo(bx+22, by+bh-1);
     ctx.closePath();
     ctx.fillStyle="#FFFBEA"; ctx.fill();
     ctx.strokeStyle="#3B3524";
     ctx.beginPath();
-    ctx.moveTo(bx+8, by+bh-1); ctx.lineTo(s.at[0]+2, s.at[1]); ctx.lineTo(bx+22, by+bh-1);
+    ctx.moveTo(bx+8, by+bh-1); ctx.lineTo(2, 0); ctx.lineTo(bx+22, by+bh-1);
     ctx.stroke();
     ctx.fillStyle="#26221A";
     ctx.textAlign="left"; ctx.textBaseline="top";
     lines.forEach(function(l,i){ ctx.fillText(l, bx+pad, by+pad-2+i*lh); });
     ctx.restore();
   }
+  var imgCache={};
+  function drawImg(s){
+    var im=imgCache[s.src];
+    if(!im){
+      im=new Image(); imgCache[s.src]=im;
+      im.onload=function(){ redraw(); rebuildShapeX(); };   /* 로드 후 X·크기 핸들 배치 */
+      im.src=s.src;
+    }
+    if(!im.complete||!im.naturalWidth) return;
+    var w=s.w||200, h=w*im.naturalHeight/im.naturalWidth;
+    ctx.save();
+    ctx.shadowColor="rgba(0,0,0,.35)"; ctx.shadowBlur=8/view.s;
+    ctx.drawImage(im, s.at[0], s.at[1], w, h);
+    ctx.restore();
+    ctx.lineWidth=2/view.s; ctx.strokeStyle="#fff";
+    ctx.strokeRect(s.at[0], s.at[1], w, h);
+    s.b=[s.at[0]+w, s.at[1]+h];   /* 크기 핸들·앵커 계산용 */
+  }
   function drawShape(s){
+    if(s.type==="img"){ drawImg(s); return; }
     if(s.type==="stamp"){ drawStamp(s); return; }
     if(s.type==="marker"){ drawMarker(s); return; }
     if(s.type==="note"){ drawNote(s); return; }
@@ -1812,10 +1930,15 @@
     sctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.tx,dpr*view.ty);
     sctx.lineCap="round"; sctx.lineJoin="round";
     var mainCtx=ctx; ctx=sctx;      /* drawShape가 쓰는 ctx를 잠시 레이어로 전환 */
-    strokes.forEach(drawShape);
+    /* 1패스: 펜 획만 (지우개는 이 레이어의 획만 깎음) */
+    strokes.forEach(function(k){ if(k.type==="free") drawShape(k); });
     ctx=mainCtx;
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.drawImage(sc,0,0,cw,ch);
+    /* 2패스: 도형·심볼·마커·메모 — 지우개 영향 없음, 위에 별도로 그림 */
+    ctx.setTransform(dpr*view.s,0,0,dpr*view.s,dpr*view.tx,dpr*view.ty);
+    ctx.lineCap="round"; ctx.lineJoin="round";
+    strokes.forEach(function(k){ if(k.type!=="free") drawShape(k); });
   }
   function localXY(e){
     var r=wrap.getBoundingClientRect();
@@ -1868,6 +1991,20 @@
         /* 메모: 탭한 지점을 기억했다가 손을 떼면 입력 모달 */
         pendingNoteAt=w; cur=null;
         e.preventDefault();
+        return;
+      }
+      if(tool==="strokeDel"){
+        /* 획삭제: 탭 지점에서 가장 가까운 펜 획을 통째로 제거 (화면 12px 이내) */
+        var best=-1, bestD=12/view.s;
+        strokes.forEach(function(k,i){
+          if(k.type!=="free"||k.e) return;
+          for(var j=0;j<k.pts.length;j++){
+            var d=Math.hypot(k.pts[j][0]-w[0], k.pts[j][1]-w[1]);
+            if(d<bestD){ bestD=d; best=i; }
+          }
+        });
+        if(best>-1){ strokes.splice(best,1); log("펜 획 삭제"); redraw(); rebuildShapeX(); scheduleSave(); }
+        cur=null; e.preventDefault();
         return;
       }
       if(tool==="pen"||tool==="erase"){
@@ -1948,9 +2085,11 @@
   /* 도형·심볼마다 삭제 X 버튼을 화면 좌표로 배치 (펜 획은 지우개 담당이라 제외) */
   var shapeXLayer=document.getElementById("shapeXLayer");
   function shapeAnchor(s){
-    if(s.type==="stamp") return [s.at[0], s.at[1]-22];
-    if(s.type==="marker") return [s.at[0], s.at[1]-40];
-    if(s.type==="note") return [s.at[0]+16, s.at[1]+4];
+    var k=1/view.s;   /* 화면 고정 크기 요소는 오프셋도 화면 기준 */
+    if(s.type==="stamp") return [s.at[0], s.at[1]-22*k];
+    if(s.type==="marker") return [s.at[0], s.at[1]-40*k];
+    if(s.type==="note") return [s.at[0]+16*k, s.at[1]+4*k];
+    if(s.type==="img"&&s.b) return [s.b[0], s.at[1]];
     if(s.type==="arrow") return [s.b[0], s.b[1]];
     if(s.type==="rect"||s.type==="building")
       return [Math.max(s.a[0],s.b[0]), Math.min(s.a[1],s.b[1])];
@@ -1975,11 +2114,42 @@
         if(s.type==="stamp") nm="평면도 표기 삭제: "+(SHAPE_NAMES["st-"+s.sym]||s.sym);
         else if(s.type==="marker") nm="지도 마커 삭제: "+(s.t||"");
         else if(s.type==="note") nm="메모 삭제: "+(s.t||"").slice(0,20);
+        else if(s.type==="img") nm="사진 삭제";
         else nm="도형 삭제: "+(SHAPE_NAMES[s.type]||s.type);
         log(nm);
         redraw(); rebuildShapeX(); scheduleSave();
       });
       shapeXLayer.appendChild(b);
+      /* 사각형·건물·화살표: 끝점(b) 드래그 핸들로 크기 조절 */
+      if(s.type==="rect"||s.type==="building"||s.type==="arrow"||(s.type==="img"&&s.b)){
+        var h=document.createElement("button");
+        h.className="sh"; h.textContent="⤡";
+        h.setAttribute("aria-label","도형 크기 조절");
+        h.style.left=(s.b[0]*view.s+view.tx)+"px";
+        h.style.top =(s.b[1]*view.s+view.ty)+"px";
+        h.addEventListener("pointerdown",function(e){
+          e.stopPropagation(); e.preventDefault();
+          try{ h.setPointerCapture(e.pointerId); }catch(err){}
+          function mv(ev){
+            var p=localXY(ev), w=s2w(p[0],p[1]);
+            if(s.type==="img"){ s.w=Math.max(40, w[0]-s.at[0]); }
+            else s.b=w;
+            h.style.left=(s.b[0]*view.s+view.tx)+"px";
+            h.style.top =(s.b[1]*view.s+view.ty)+"px";
+            redraw();
+          }
+          function up(){
+            h.removeEventListener("pointermove",mv);
+            h.removeEventListener("pointerup",up);
+            h.removeEventListener("pointercancel",up);
+            rebuildShapeX(); scheduleSave();
+          }
+          h.addEventListener("pointermove",mv);
+          h.addEventListener("pointerup",up);
+          h.addEventListener("pointercancel",up);
+        });
+        shapeXLayer.appendChild(h);
+      }
     });
   }
   cv.addEventListener("pointerup",penUp);
@@ -2034,6 +2204,33 @@
     btn.addEventListener("click",function(){ setTool(btn.dataset.shape); closeShapeMenu(); });
   });
   cv.addEventListener("pointerdown",closeShapeMenu);
+
+  /* ── 사진 첨부: 파일 선택 → 폭 800px JPEG로 축소 → 화면 중앙에 배치 ── */
+  var photoFile=document.getElementById("photoFile");
+  document.getElementById("photoBtn").addEventListener("click",function(){ photoFile.value=""; photoFile.click(); });
+  photoFile.addEventListener("change",function(){
+    var f=photoFile.files&&photoFile.files[0];
+    if(!f) return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      var im=new Image();
+      im.onload=function(){
+        var MAXW=800, sc2=Math.min(1, MAXW/im.naturalWidth);
+        var c=document.createElement("canvas");
+        c.width=Math.round(im.naturalWidth*sc2); c.height=Math.round(im.naturalHeight*sc2);
+        c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+        var src=c.toDataURL("image/jpeg",0.8);
+        var r=wrap.getBoundingClientRect();
+        var w0=s2w(r.width/2, r.height/2);
+        var ww=Math.min(260, r.width*0.4)/view.s;
+        strokes.push({type:"img", at:[w0[0]-ww/2, w0[1]-ww/2], w:ww, src:src});
+        log("사진 첨부: "+(f.name||"이미지"));
+        redraw(); rebuildShapeX(); scheduleSave();
+      };
+      im.src=rd.result;
+    };
+    rd.readAsDataURL(f);
+  });
 
   /* ── 도구 옵션 바: 펜·도형=색상+굵기 / 지우개=크기 ── */
   var toolOpts=document.getElementById("toolOpts");
@@ -2181,6 +2378,7 @@
   }
   function addChipFromData(d){
     var chip=createChip(d.n,d.c);
+    if(d.w) chip.dataset.crew=d.w;
     if(d.z==="lane"&&laneList.children[d.i]){
       laneList.children[d.i].querySelector(".laneBody").appendChild(chip);
     }else if(d.z==="plan"){
@@ -2325,10 +2523,12 @@
     chipDelete.style.display=chip?"":"none";
     resetDelete();
     chipName.value=chip?chip.dataset.name:"";
+    chipCrew.value=(chip&&chip.dataset.crew)||"";
     setSwatch(chip?chipColor(chip):"blue");
     chipModal.hidden=false;
     chipName.focus();
   }
+  var chipCrew=document.getElementById("chipCrew");
   function closeChipEditor(){ chipModal.hidden=true; editChip=null; resetDelete(); }
   function resetDelete(){
     clearTimeout(delTimer);
@@ -2356,8 +2556,16 @@
         editChip.classList.remove(oldColor); editChip.classList.add(selColor);
         log("말 색상 변경: "+name);
       }
+      var crew=chipCrew.value.trim();
+      if(crew!==(editChip.dataset.crew||"")){
+        if(crew) editChip.dataset.crew=crew; else delete editChip.dataset.crew;
+        log("대원 명단 갱신: "+name);
+      }
     }else{
-      tray.appendChild(createChip(name,selColor));
+      var nc=createChip(name,selColor);
+      var crew0=chipCrew.value.trim();
+      if(crew0) nc.dataset.crew=crew0;
+      tray.appendChild(nc);
       log("말 추가: "+name);
       refreshCounts();
     }
@@ -2802,6 +3010,7 @@
     var chips=[];
     function push(c,extra){
       var d={n:c.dataset.name, c:chipColor(c)};
+      if(c.dataset.crew) d.w=c.dataset.crew;
       for(var k in extra) d[k]=extra[k];
       chips.push(d);
     }
