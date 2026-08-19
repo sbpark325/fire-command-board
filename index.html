@@ -732,7 +732,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.19</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.20</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -2046,6 +2046,7 @@
         cur={type:tool, color:penColor, width:penWidth, a:w, b:w};
       }
       strokes.push(cur);
+      redraw();   /* 스탬프처럼 탭만 하는 경우도 즉시 표시 (move 없이 up 되면 그릴 기회가 없음) */
     }else if(pointers.size===2){
       panStart=null; pendingNoteAt=null;
       /* 두 번째 손가락 → 방금 시작한 획은 취소하고 팬/줌 모드 */
@@ -2109,7 +2110,7 @@
         scheduleSave();
       }
       cur=null;
-      if(finished) rebuildShapeX();   /* cur 해제 후 재구성해야 방금 도형에도 X가 붙음 */
+      if(finished){ redraw(); rebuildShapeX(); }   /* 확정 후 최종 렌더 */
       flushRemote();   /* 그리는 중 보류해 둔 원격 갱신 적용 */
     }
   }
