@@ -124,15 +124,12 @@
     box-shadow:0 1px 3px rgba(0,0,0,.3);
   }
   #shapeXLayer .sx:active{background:var(--red); border-color:var(--red); color:#fff}
-  #shapeXLayer .sm{
-    position:absolute; transform:translate(-50%,-50%);
-    width:20px; height:20px; padding:0; pointer-events:auto; touch-action:none;
-    display:flex; align-items:center; justify-content:center;
-    border-radius:50%; border:1px solid rgba(0,0,0,.35);
-    background:#fff; color:#22262A; font-size:12px; line-height:1; font-weight:800;
-    box-shadow:0 1px 3px rgba(0,0,0,.3); cursor:move;
+  #shapeXLayer .selBox{
+    position:absolute; pointer-events:auto; touch-action:none; cursor:move;
+    border:1.5px dashed var(--amber); border-radius:4px;
+    background:rgba(255,178,36,.06);
+    box-shadow:0 0 0 1px rgba(255,255,255,.6);
   }
-  #shapeXLayer .sm:active{background:var(--amber); border-color:var(--amber)}
   #shapeXLayer .sh{
     position:absolute; transform:translate(-50%,-50%);
     width:22px; height:22px; padding:0; pointer-events:auto; touch-action:none;
@@ -732,7 +729,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.17</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.18</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -2010,12 +2007,18 @@
     pointers.set(e.pointerId, localXY(e));
     if(pointers.size===1){
       if(tool==="pan"){
-        /* 이동 도구: 한 손가락/좌클릭 드래그 = 화면 이동만 */
+        /* 이동 도구: 도형 위를 탭하면 선택(굿노트식), 빈 곳이면 선택 해제 + 화면 이동 */
+        var pp=localXY(e), ww=s2w(pp[0],pp[1]);
+        var hit=hitShape(ww);
+        if(hit){ selectShape(hit); cur=null; e.preventDefault(); return; }
+        deselectShape();
         panStart={x:e.clientX, y:e.clientY, tx:view.tx, ty:view.ty};
         cur=null;
         e.preventDefault();
         return;
       }
+      /* 다른 도구로 캔버스를 만지면 선택 해제 */
+      deselectShape();
       var p=localXY(e), w=s2w(p[0],p[1]);
       if(tool==="note"){
         /* 메모: 탭한 지점을 기억했다가 손을 떼면 입력 모달 */
@@ -2121,94 +2124,124 @@
       return [Math.max(s.a[0],s.b[0]), Math.min(s.a[1],s.b[1])];
     return null;
   }
+  /* ── 도형 선택 시스템 (굿노트식): 이동 도구로 도형을 탭하면 선택 →
+        선택 테두리 + 그때만 핸들(×·⤡) 표시, 몸체 드래그로 이동, 빈 곳 탭/도구 변경 시 해제 ── */
+  var selShape=null;   /* 선택된 stroke 객체 */
+  function shapeBounds(s){
+    /* 월드 좌표 경계상자 [x0,y0,x1,y1] — 화면 고정 요소는 화면 크기를 월드로 환산 */
+    var k=1/view.s;
+    if(s.type==="rect"||s.type==="building")
+      return [Math.min(s.a[0],s.b[0]),Math.min(s.a[1],s.b[1]),Math.max(s.a[0],s.b[0]),Math.max(s.a[1],s.b[1])];
+    if(s.type==="arrow"){
+      var pad=8*k;
+      return [Math.min(s.a[0],s.b[0])-pad,Math.min(s.a[1],s.b[1])-pad,Math.max(s.a[0],s.b[0])+pad,Math.max(s.a[1],s.b[1])+pad];
+    }
+    if(s.type==="stamp"){
+      var d=STAMPS[s.sym]; var hw=(d&&d.letter)?18*k:46*k;
+      return [s.at[0]-hw, s.at[1]-16*k, s.at[0]+hw, s.at[1]+16*k];
+    }
+    if(s.type==="marker") return [s.at[0]-12*k, s.at[1]-32*k, s.at[0]+80*k, s.at[1]+2*k];
+    if(s.type==="note"){
+      var lines=Math.max(1,Math.min(5,(s.t||"").split("\n").length));
+      var bh=(lines*17+14)*k;
+      return [s.at[0], s.at[1]-bh-16*k, s.at[0]+190*k, s.at[1]+2*k];
+    }
+    if(s.type==="img"&&s.b) return [s.at[0], s.at[1], s.b[0], s.b[1]];
+    return null;
+  }
+  function hitShape(w){
+    for(var i=strokes.length-1;i>=0;i--){
+      var s=strokes[i]; if(s.type==="free") continue;
+      var bb=shapeBounds(s); if(!bb) continue;
+      if(w[0]>=bb[0]&&w[0]<=bb[2]&&w[1]>=bb[1]&&w[1]<=bb[3]) return s;
+    }
+    return null;
+  }
+  function selectShape(s){ selShape=s; rebuildShapeX(); }
+  function deselectShape(){ if(selShape){ selShape=null; rebuildShapeX(); } }
+  function moveShapeBy(s,dx,dy,snap){
+    if(snap.at) s.at=[snap.at[0]+dx, snap.at[1]+dy];
+    if(snap.a)  s.a =[snap.a[0]+dx,  snap.a[1]+dy];
+    if(snap.b&&s.type!=="img") s.b=[snap.b[0]+dx, snap.b[1]+dy];
+  }
+  function deleteShape(s){
+    var i=strokes.indexOf(s); if(i<0) return;
+    strokes.splice(i,1);
+    var nm;
+    if(s.type==="stamp") nm="평면도 표기 삭제: "+(SHAPE_NAMES["st-"+s.sym]||s.sym);
+    else if(s.type==="marker") nm="지도 마커 삭제: "+(s.t||"");
+    else if(s.type==="note") nm="메모 삭제: "+(s.t||"").slice(0,20);
+    else if(s.type==="img") nm="사진 삭제";
+    else nm="도형 삭제: "+(SHAPE_NAMES[s.type]||s.type);
+    log(nm);
+    if(selShape===s) selShape=null;
+    redraw(); rebuildShapeX(); scheduleSave();
+  }
   function rebuildShapeX(){
     shapeXLayer.textContent="";
-    strokes.forEach(function(s,i){
-      if(s===cur) return;               /* 그리는 중인 도형은 확정 후에 */
-      var a=shapeAnchor(s);
-      if(!a) return;
-      var b=document.createElement("button");
-      b.className="sx"; b.textContent="×";
-      b.setAttribute("aria-label","도형 삭제");
-      b.style.left=(a[0]*view.s+view.tx)+"px";
-      b.style.top =(a[1]*view.s+view.ty)+"px";
-      b.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
-      b.addEventListener("click",function(e){
-        e.stopPropagation();
-        strokes.splice(i,1);
-        var nm;
-        if(s.type==="stamp") nm="평면도 표기 삭제: "+(SHAPE_NAMES["st-"+s.sym]||s.sym);
-        else if(s.type==="marker") nm="지도 마커 삭제: "+(s.t||"");
-        else if(s.type==="note") nm="메모 삭제: "+(s.t||"").slice(0,20);
-        else if(s.type==="img") nm="사진 삭제";
-        else nm="도형 삭제: "+(SHAPE_NAMES[s.type]||s.type);
-        log(nm);
-        redraw(); rebuildShapeX(); scheduleSave();
-      });
-      shapeXLayer.appendChild(b);
-      /* 이동 핸들(✥): 끌면 도형 전체 이동 — X 왼쪽에 배치 */
-      (function(){
-        var mvb=document.createElement("button");
-        mvb.className="sm"; mvb.textContent="✥";
-        mvb.setAttribute("aria-label","도형 이동");
-        mvb.style.left=(a[0]*view.s+view.tx-24)+"px";
-        mvb.style.top =(a[1]*view.s+view.ty)+"px";
-        mvb.addEventListener("pointerdown",function(e){
-          e.stopPropagation(); e.preventDefault();
-          try{ mvb.setPointerCapture(e.pointerId); }catch(err){}
-          var p0=localXY(e), w0=s2w(p0[0],p0[1]);
-          var snap=JSON.parse(JSON.stringify({at:s.at||null,a:s.a||null,b:s.b||null}));
-          function mv(ev){
-            var p=localXY(ev), w=s2w(p[0],p[1]);
-            var dx=w[0]-w0[0], dy=w[1]-w0[1];
-            if(snap.at) s.at=[snap.at[0]+dx, snap.at[1]+dy];
-            if(snap.a)  s.a =[snap.a[0]+dx,  snap.a[1]+dy];
-            if(snap.b&&s.type!=="img") s.b=[snap.b[0]+dx, snap.b[1]+dy];
-            redraw();
-          }
-          function up(){
-            mvb.removeEventListener("pointermove",mv);
-            mvb.removeEventListener("pointerup",up);
-            mvb.removeEventListener("pointercancel",up);
-            rebuildShapeX(); scheduleSave();
-          }
-          mvb.addEventListener("pointermove",mv);
-          mvb.addEventListener("pointerup",up);
-          mvb.addEventListener("pointercancel",up);
-        });
-        shapeXLayer.appendChild(mvb);
-      })();
-      /* 사각형·건물·화살표: 끝점(b) 드래그 핸들로 크기 조절 */
-      if(s.type==="rect"||s.type==="building"||s.type==="arrow"||(s.type==="img"&&s.b)){
-        var h=document.createElement("button");
-        h.className="sh"; h.textContent="⤡";
-        h.setAttribute("aria-label","도형 크기 조절");
-        h.style.left=(s.b[0]*view.s+view.tx)+"px";
-        h.style.top =(s.b[1]*view.s+view.ty)+"px";
-        h.addEventListener("pointerdown",function(e){
-          e.stopPropagation(); e.preventDefault();
-          try{ h.setPointerCapture(e.pointerId); }catch(err){}
-          function mv(ev){
-            var p=localXY(ev), w=s2w(p[0],p[1]);
-            if(s.type==="img"){ s.w=Math.max(40, w[0]-s.at[0]); }
-            else s.b=w;
-            h.style.left=(s.b[0]*view.s+view.tx)+"px";
-            h.style.top =(s.b[1]*view.s+view.ty)+"px";
-            redraw();
-          }
-          function up(){
-            h.removeEventListener("pointermove",mv);
-            h.removeEventListener("pointerup",up);
-            h.removeEventListener("pointercancel",up);
-            rebuildShapeX(); scheduleSave();
-          }
-          h.addEventListener("pointermove",mv);
-          h.addEventListener("pointerup",up);
-          h.addEventListener("pointercancel",up);
-        });
-        shapeXLayer.appendChild(h);
+    if(!selShape || strokes.indexOf(selShape)<0){ selShape=null; return; }
+    var s=selShape;
+    var bb=shapeBounds(s); if(!bb) return;
+    var x0=bb[0]*view.s+view.tx, y0=bb[1]*view.s+view.ty;
+    var x1=bb[2]*view.s+view.tx, y1=bb[3]*view.s+view.ty;
+    var box=document.createElement("div");
+    box.className="selBox";
+    box.style.left=x0+"px"; box.style.top=y0+"px";
+    box.style.width=(x1-x0)+"px"; box.style.height=(y1-y0)+"px";
+    box.addEventListener("pointerdown",function(e){
+      e.stopPropagation(); e.preventDefault();
+      try{ box.setPointerCapture(e.pointerId); }catch(err){}
+      var p0=localXY(e), w0=s2w(p0[0],p0[1]);
+      var snap=JSON.parse(JSON.stringify({at:s.at||null,a:s.a||null,b:s.b||null}));
+      var moved=false;
+      function mv(ev){
+        var p=localXY(ev), w=s2w(p[0],p[1]);
+        var dx=w[0]-w0[0], dy=w[1]-w0[1];
+        if(Math.hypot(dx*view.s,dy*view.s)>3) moved=true;
+        moveShapeBy(s,dx,dy,snap); redraw(); rebuildShapeX();
       }
+      function up(){
+        box.removeEventListener("pointermove",mv);
+        box.removeEventListener("pointerup",up);
+        box.removeEventListener("pointercancel",up);
+        if(moved) scheduleSave();
+      }
+      box.addEventListener("pointermove",mv);
+      box.addEventListener("pointerup",up);
+      box.addEventListener("pointercancel",up);
     });
+    shapeXLayer.appendChild(box);
+    var xb=document.createElement("button");
+    xb.className="sx"; xb.textContent="×"; xb.setAttribute("aria-label","도형 삭제");
+    xb.style.left=x1+"px"; xb.style.top=y0+"px";
+    xb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+    xb.addEventListener("click",function(e){ e.stopPropagation(); deleteShape(s); });
+    shapeXLayer.appendChild(xb);
+    if(s.type==="rect"||s.type==="building"||s.type==="arrow"||(s.type==="img"&&s.b)){
+      var h=document.createElement("button");
+      h.className="sh"; h.textContent="⤡"; h.setAttribute("aria-label","도형 크기 조절");
+      h.style.left=x1+"px"; h.style.top=y1+"px";
+      h.addEventListener("pointerdown",function(e){
+        e.stopPropagation(); e.preventDefault();
+        try{ h.setPointerCapture(e.pointerId); }catch(err){}
+        function mv(ev){
+          var p=localXY(ev), w=s2w(p[0],p[1]);
+          if(s.type==="img"){ s.w=Math.max(40, w[0]-s.at[0]); }
+          else s.b=w;
+          redraw(); rebuildShapeX();
+        }
+        function up(){
+          h.removeEventListener("pointermove",mv);
+          h.removeEventListener("pointerup",up);
+          h.removeEventListener("pointercancel",up);
+          scheduleSave();
+        }
+        h.addEventListener("pointermove",mv);
+        h.addEventListener("pointerup",up);
+        h.addEventListener("pointercancel",up);
+      });
+      shapeXLayer.appendChild(h);
+    }
   }
   cv.addEventListener("pointerup",penUp);
   cv.addEventListener("pointercancel",penUp);
@@ -2239,6 +2272,7 @@
   }
   function setTool(t){
     tool=t;
+    if(t!=="pan") deselectShape();
     var isShape=!!SHAPE_NAMES[t];
     document.querySelectorAll(".tools [data-tool]").forEach(function(b){
       b.setAttribute("aria-pressed", b.dataset.tool===t ? "true":"false");
