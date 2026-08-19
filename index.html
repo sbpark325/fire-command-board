@@ -778,7 +778,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.23</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.24</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1050,11 +1050,15 @@
 <div id="aiKeyModal" hidden>
   <div class="chipCard">
     <h3>지령서 인식 API 설정</h3>
-    <p class="presetSub">Anthropic API 키는 이 기기의 브라우저에만 저장됩니다(서버·코드 저장소에 올라가지 않음). 지령서 사진은 인식을 위해 Anthropic API로 직접 전송됩니다.</p>
-    <p class="aiKeyLbl">API 키</p>
-    <input id="aiKeyIn" type="password" placeholder="sk-ant-…" spellcheck="false" autocomplete="off">
-    <p class="aiKeyLbl">모델 (비우면 기본값 claude-opus-5)</p>
-    <input id="aiModelIn" placeholder="claude-opus-5" spellcheck="false" autocomplete="off">
+    <div class="stTabs" id="aiProvTabs">
+      <button class="stTab" data-p="gemini">Google Gemini <span class="presetSub" style="margin:0">무료 티어</span></button>
+      <button class="stTab" data-p="anthropic">Anthropic Claude</button>
+    </div>
+    <p class="presetSub" id="aiProvNote"></p>
+    <p class="aiKeyLbl">API 키 <span style="font-weight:600">— 이 기기의 브라우저에만 저장됩니다</span></p>
+    <input id="aiKeyIn" type="password" placeholder="" spellcheck="false" autocomplete="off">
+    <p class="aiKeyLbl" id="aiModelLbl">모델</p>
+    <input id="aiModelIn" placeholder="" spellcheck="false" autocomplete="off">
     <p class="presetSub" id="aiKeyMsg" hidden></p>
     <div class="chipActions">
       <button class="btn" id="aiKeyDel">키 삭제</button>
@@ -3199,9 +3203,27 @@
         · API 키는 이 기기 localStorage에만 저장 (공개 저장소/페이지에 노출되지 않음)
         · 이미지는 긴 변 2400px JPEG로 줄여 base64로 직접 전송(브라우저 → api.anthropic.com)
         · 구조화 출력(json_schema)으로 출동대 목록을 받아 프리셋 이름으로 매핑 → 확인 후 트레이에 추가 ── */
-  var AI_KEY_K="fireboard-ai-key", AI_MODEL_K="fireboard-ai-model", AI_MODEL_DEF="claude-opus-5";
-  function aiKey(){ try{ return localStorage.getItem(AI_KEY_K)||""; }catch(e){ return ""; } }
-  function aiModel(){ try{ return localStorage.getItem(AI_MODEL_K)||AI_MODEL_DEF; }catch(e){ return AI_MODEL_DEF; } }
+  /* 공급자 2종: gemini(Google AI Studio 무료 티어, 기본) / anthropic(Claude, 유료).
+     키·모델은 공급자별로 기기 localStorage에만 저장 */
+  var AI_PROV_K="fireboard-ai-prov";
+  var AI_KEY_KS={gemini:"fireboard-ai-key-gemini", anthropic:"fireboard-ai-key"};
+  var AI_MODEL_KS={gemini:"fireboard-ai-model-gemini", anthropic:"fireboard-ai-model"};
+  var AI_MODEL_DEFS={gemini:"gemini-2.5-flash", anthropic:"claude-opus-5"};
+  var AI_PROV_INFO={
+    gemini:{name:"Google Gemini", ph:"AIza…",
+      note:"키는 aistudio.google.com/apikey 에서 무료로 발급합니다. 무료 티어는 구글이 입력한 내용을 서비스 개선에 쓸 수 있으니 기관 정책을 확인하세요. 지령서 사진은 Google API로 직접 전송됩니다."},
+    anthropic:{name:"Anthropic Claude", ph:"sk-ant-…",
+      note:"키는 console.anthropic.com 에서 발급합니다(유료 — 지령서 1장당 약 $0.02~0.10). 지령서 사진은 Anthropic API로 직접 전송됩니다."}
+  };
+  function lsGet(k){ try{ return localStorage.getItem(k)||""; }catch(e){ return ""; } }
+  function aiProv(){
+    var p=lsGet(AI_PROV_K);
+    if(p&&AI_KEY_KS[p]) return p;
+    /* V2.23에서 Anthropic 키만 저장해 둔 기기는 그대로 Anthropic 유지 */
+    return lsGet(AI_KEY_KS.anthropic)?"anthropic":"gemini";
+  }
+  function aiKey(prov){ return lsGet(AI_KEY_KS[prov||aiProv()]); }
+  function aiModel(prov){ prov=prov||aiProv(); return lsGet(AI_MODEL_KS[prov])||AI_MODEL_DEFS[prov]; }
   var aiModal=document.getElementById("aiModal");
   var aiKeyModal=document.getElementById("aiKeyModal");
   var aiStatus=document.getElementById("aiStatus");
@@ -3252,21 +3274,42 @@
 
   function aiSetStatus(t,err){ aiStatus.textContent=t||""; aiStatus.classList.toggle("err",!!err); }
   function aiKeyShow(t){ aiKeyMsg.textContent=t; aiKeyMsg.hidden=!t; }
+  var aiEditProv="gemini";   /* 키 모달에서 편집 중인 공급자 탭 */
+  var aiProvTabs=document.getElementById("aiProvTabs");
+  var aiProvNote=document.getElementById("aiProvNote");
+  var aiModelLbl=document.getElementById("aiModelLbl");
+  function aiLoadProvForm(p){
+    aiEditProv=p;
+    aiProvTabs.querySelectorAll(".stTab").forEach(function(b){ b.setAttribute("aria-pressed", b.dataset.p===p?"true":"false"); });
+    var info=AI_PROV_INFO[p];
+    aiProvNote.textContent=info.note;
+    aiKeyIn.placeholder=info.ph; aiKeyIn.value=aiKey(p);
+    aiModelLbl.textContent="모델 (비우면 기본값 "+AI_MODEL_DEFS[p]+")";
+    aiModelIn.placeholder=AI_MODEL_DEFS[p];
+    var m=lsGet(AI_MODEL_KS[p]); aiModelIn.value=(m===AI_MODEL_DEFS[p]?"":m);
+    aiKeyShow(aiKey(p)?"":"먼저 "+info.name+" API 키를 저장하세요.");
+  }
+  aiProvTabs.querySelectorAll(".stTab").forEach(function(b){
+    b.addEventListener("click",function(){ aiLoadProvForm(b.dataset.p); });
+  });
   function openAiKey(){
-    aiKeyIn.value=aiKey(); aiModelIn.value=(aiModel()===AI_MODEL_DEF?"":aiModel());
-    aiKeyShow(aiKey()?"":"먼저 API 키를 저장하세요. 키는 console.anthropic.com에서 발급합니다.");
+    aiLoadProvForm(aiProv());
     aiKeyModal.hidden=false; aiKeyIn.focus();
   }
   document.getElementById("aiKeyBtn").addEventListener("click",openAiKey);
   document.getElementById("aiKeyClose").addEventListener("click",function(){ aiKeyModal.hidden=true; aiPendingPick=false; });
   document.getElementById("aiKeyDel").addEventListener("click",function(){
-    try{ localStorage.removeItem(AI_KEY_K); localStorage.removeItem(AI_MODEL_K); }catch(e){}
-    aiKeyIn.value=""; aiModelIn.value=""; aiKeyShow("이 기기에서 키를 삭제했습니다");
+    try{ localStorage.removeItem(AI_KEY_KS[aiEditProv]); localStorage.removeItem(AI_MODEL_KS[aiEditProv]); }catch(e){}
+    aiKeyIn.value=""; aiModelIn.value=""; aiKeyShow("이 기기에서 "+AI_PROV_INFO[aiEditProv].name+" 키를 삭제했습니다");
   });
   document.getElementById("aiKeySave").addEventListener("click",function(){
     var k=aiKeyIn.value.trim(), m=aiModelIn.value.trim();
     if(!k){ aiKeyShow("API 키를 입력하세요"); aiKeyIn.focus(); return; }
-    try{ localStorage.setItem(AI_KEY_K,k); if(m) localStorage.setItem(AI_MODEL_K,m); else localStorage.removeItem(AI_MODEL_K); }catch(e){}
+    try{
+      localStorage.setItem(AI_KEY_KS[aiEditProv],k);
+      if(m) localStorage.setItem(AI_MODEL_KS[aiEditProv],m); else localStorage.removeItem(AI_MODEL_KS[aiEditProv]);
+      localStorage.setItem(AI_PROV_K,aiEditProv);   /* 저장한 공급자를 사용 공급자로 */
+    }catch(e){}
     aiKeyModal.hidden=true;
     if(aiPendingPick){ aiPendingPick=false; aiFile.value=""; aiFile.click(); }
   });
@@ -3301,20 +3344,96 @@
       rd.readAsDataURL(file);
     });
   }
-  /* Claude Messages API 호출 (구조화 출력). fallbacks 베타가 거부되면 한 번 빼고 재시도 */
-  function aiCall(b64, useFallback){
+  var AI_USER_TEXT="이 출동지령서를 읽어 사건 정보와 출동대 목록을 추출하세요.";
+  /* 공급자 분기 — 둘 다 모델이 낸 JSON 문자열을 resolve */
+  function aiCall(b64){
+    return aiProv()==="gemini" ? aiCallGemini(b64, aiModel("gemini"), false) : aiCallClaude(b64, true);
+  }
+  /* Gemini 스키마: Claude용 json_schema에서 additionalProperties를 빼고 type을 대문자로 */
+  function aiSchemaG(x){
+    if(Array.isArray(x)) return x.map(aiSchemaG);
+    if(x&&typeof x==="object"){
+      var o={};
+      Object.keys(x).forEach(function(k){
+        if(k==="additionalProperties") return;
+        o[k]=(k==="type"&&typeof x[k]==="string") ? x[k].toUpperCase() : aiSchemaG(x[k]);
+      });
+      return o;
+    }
+    return x;
+  }
+  /* Gemini generateContent (Google AI Studio 키, 브라우저 직접 호출).
+     지정 모델이 없으면(404) 목록에서 최신 flash 모델을 찾아 1회 재시도 + 기기에 저장 */
+  function aiCallGemini(b64, model, retried){
     var body={
-      model:aiModel(), max_tokens:16000,
+      systemInstruction:{parts:[{text:AI_SYSTEM}]},
+      contents:[{role:"user", parts:[
+        {inline_data:{mime_type:"image/jpeg", data:b64}},
+        {text:AI_USER_TEXT}
+      ]}],
+      generationConfig:{responseMimeType:"application/json", responseSchema:aiSchemaG(AI_SCHEMA), maxOutputTokens:16000}
+    };
+    return fetch("https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",
+        {method:"POST", headers:{"content-type":"application/json","x-goog-api-key":aiKey("gemini")}, body:JSON.stringify(body)})
+      .then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(j){
+          if(!r.ok){
+            var msg=(j&&j.error&&j.error.message)||("HTTP "+r.status);
+            if(r.status===404 && !retried){
+              return aiGeminiPickModel().then(function(m){
+                if(m && m!==model){
+                  try{ localStorage.setItem(AI_MODEL_KS.gemini,m); }catch(e){}
+                  return aiCallGemini(b64,m,true);
+                }
+                throw new Error("모델 '"+model+"'을(를) 찾을 수 없습니다 — API 설정에서 모델명을 확인하세요");
+              });
+            }
+            if(/API key|API_KEY/i.test(msg)||r.status===401||r.status===403) msg="API 키가 올바르지 않거나 권한이 없습니다 (API 설정에서 확인)";
+            else if(r.status===429) msg="무료 한도 초과 — 잠시 후(1분쯤) 다시 시도하세요";
+            else if(r.status===503) msg="API 서버 혼잡 — 잠시 후 다시 시도하세요";
+            throw new Error(msg);
+          }
+          var cand=(j.candidates||[])[0];
+          if(!cand){
+            if(j.promptFeedback&&j.promptFeedback.blockReason) throw new Error("모델이 이 이미지 처리를 거부했습니다 — 다른 사진으로 다시 시도하세요");
+            throw new Error("응답이 비어 있습니다");
+          }
+          if(cand.finishReason==="SAFETY"||cand.finishReason==="PROHIBITED_CONTENT") throw new Error("모델이 이 이미지 처리를 거부했습니다 — 다른 사진으로 다시 시도하세요");
+          if(cand.finishReason==="MAX_TOKENS") throw new Error("출력이 잘렸습니다 — 다시 시도하세요");
+          var txt=""; ((cand.content&&cand.content.parts)||[]).forEach(function(pt){ if(pt.text) txt+=pt.text; });
+          return txt;
+        });
+      });
+  }
+  function aiGeminiPickModel(){
+    return fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",{headers:{"x-goog-api-key":aiKey("gemini")}})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var ms=(j.models||[]).filter(function(m){ return (m.supportedGenerationMethods||[]).indexOf("generateContent")>=0; })
+          .map(function(m){ return (m.name||"").replace(/^models\//,""); });
+        function ver(n){ var mm=n.match(/gemini-(\d+(?:\.\d+)?)/); return mm?parseFloat(mm[1]):0; }
+        var flash=ms.filter(function(n){ return /^gemini-\d+(?:\.\d+)?-flash$/.test(n); });
+        flash.sort(function(a,b){ return ver(b)-ver(a); });
+        if(flash.length) return flash[0];
+        var any=ms.filter(function(n){ return /flash/.test(n)&&!/tts|image|audio|live|embedding/.test(n); });
+        any.sort(function(a,b){ return ver(b)-ver(a); });
+        return any[0]||null;
+      }).catch(function(){ return null; });
+  }
+  /* Claude Messages API 호출 (구조화 출력). fallbacks 베타가 거부되면 한 번 빼고 재시도 */
+  function aiCallClaude(b64, useFallback){
+    var body={
+      model:aiModel("anthropic"), max_tokens:16000,
       system:AI_SYSTEM,
       messages:[{role:"user", content:[
         {type:"image", source:{type:"base64", media_type:"image/jpeg", data:b64}},
-        {type:"text", text:"이 출동지령서를 읽어 사건 정보와 출동대 목록을 추출하세요."}
+        {type:"text", text:AI_USER_TEXT}
       ]}],
       output_config:{format:{type:"json_schema", schema:AI_SCHEMA}}
     };
     var hdr={
       "content-type":"application/json",
-      "x-api-key":aiKey(),
+      "x-api-key":aiKey("anthropic"),
       "anthropic-version":"2023-06-01",
       "anthropic-dangerous-direct-browser-access":"true"
     };
@@ -3324,13 +3443,16 @@
         return r.json().catch(function(){ return {}; }).then(function(j){
           if(!r.ok){
             var msg=(j&&j.error&&j.error.message)||("HTTP "+r.status);
-            if(r.status===400 && useFallback) return aiCall(b64,false);
+            if(r.status===400 && useFallback) return aiCallClaude(b64,false);
             if(r.status===401) msg="API 키가 올바르지 않습니다 (API 설정에서 확인)";
             if(r.status===429) msg="요청 한도 초과 — 잠시 후 다시 시도하세요";
             if(r.status===529) msg="API 서버 혼잡 — 잠시 후 다시 시도하세요";
             throw new Error(msg);
           }
-          return j;
+          if(j.stop_reason==="refusal") throw new Error("모델이 이 이미지 처리를 거부했습니다 — 다른 사진으로 다시 시도하세요");
+          if(j.stop_reason==="max_tokens") throw new Error("출력이 잘렸습니다 — 다시 시도하세요");
+          var txt=""; (j.content||[]).forEach(function(b){ if(b.type==="text") txt+=b.text; });
+          return txt;
         });
       });
   }
@@ -3423,12 +3545,9 @@
     if(!f) return;
     aiRows=[]; aiIncident=null; aiList.textContent=""; aiInfo.textContent=""; aiOpts.textContent="";
     aiAdd.disabled=true; aiN.textContent="0"; aiRetry.hidden=true;
-    aiSetStatus("지령서를 읽는 중… (수십 초 걸릴 수 있습니다)");
+    aiSetStatus("지령서를 읽는 중… ("+AI_PROV_INFO[aiProv()].name+" · 수십 초 걸릴 수 있습니다)");
     aiModal.hidden=false;
-    aiPrepImage(f).then(function(b64){ return aiCall(b64,true); }).then(function(j){
-      if(j.stop_reason==="refusal") throw new Error("모델이 이 이미지 처리를 거부했습니다 — 다른 사진으로 다시 시도하세요");
-      if(j.stop_reason==="max_tokens") throw new Error("출력이 잘렸습니다 — 다시 시도하세요");
-      var txt=""; (j.content||[]).forEach(function(b){ if(b.type==="text") txt+=b.text; });
+    aiPrepImage(f).then(function(b64){ return aiCall(b64); }).then(function(txt){
       var data; try{ data=JSON.parse(txt); }catch(e){ throw new Error("응답을 해석하지 못했습니다"); }
       aiIncident=data.incident||{};
       var have=existingNames();
