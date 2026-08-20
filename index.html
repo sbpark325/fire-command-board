@@ -866,7 +866,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.38</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.39</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1181,7 +1181,7 @@
 <div id="presetModal" hidden>
   <div class="chipCard presetCard">
     <h3>출동대 프리셋</h3>
-    <p class="presetSub">관서를 고르고 출동대를 탭해 선택 — 이미 보드에 있는 출동대는 제외됩니다</p>
+    <p class="presetSub">관서를 고르고 출동대를 탭해 선택 — 미배치·상태판·현재 지도에 있는 출동대는 제외 (다른 지도 탭에는 같은 출동대를 또 놓을 수 있습니다)</p>
     <div class="stTabs" id="stTabs"></div>
     <div class="puGrid" id="puGrid"></div>
     <div class="chipActions">
@@ -3845,8 +3845,13 @@
   var puSel={};         /* 선택된 출동대: 이름 → 색상 */
 
   function existingNames(){
+    /* 중복 판정: 미배치·상태판 + "현재 지도 탭"의 평면도 말만.
+       다른 지도 탭에 배치된 출동대는 제외 — 지도마다 출동대 구성을 따로 꾸릴 수 있다(V2.39) */
     var set={};
-    document.querySelectorAll(".chip").forEach(function(c){ set[c.dataset.name]=1; });
+    document.querySelectorAll(".chip").forEach(function(c){
+      if(c.parentElement===planLayer && +(c.dataset.mi||0)!==mi) return;
+      set[c.dataset.name]=1;
+    });
     return set;
   }
   function updatePuN(){ puN.textContent=Object.keys(puSel).length; }
