@@ -109,6 +109,32 @@
   .splitter:hover::before, .splitter.active::before{background:var(--amber)}
   .splitter[hidden]{display:none}
   .canvasWrap{position:absolute; inset:0; overflow:hidden}
+  /* ── 지도 탭 (보드 안에서 지도 여러 장) ── */
+  #mapTabs{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:30;
+    display:flex; align-items:center; gap:4px; max-width:min(72vw,680px); overflow-x:auto;
+    scrollbar-width:none; background:rgba(24,26,29,.86); border:1px solid var(--edge);
+    border-radius:99px; padding:4px 6px; backdrop-filter:blur(4px);
+  }
+  #mapTabs::-webkit-scrollbar{display:none}
+  .mTab{
+    flex:0 0 auto; display:flex; align-items:center; gap:6px;
+    border:1px solid transparent; background:transparent; color:var(--ink-lo);
+    border-radius:99px; padding:5px 12px; font-weight:700; font-size:12.5px; white-space:nowrap;
+  }
+  .mTab[aria-pressed="true"]{background:rgba(255,255,255,.1); color:var(--ink-hi); border-color:var(--edge-2)}
+  .mTab .mtName[contenteditable="true"]{outline:none; border-bottom:1px dashed var(--amber); min-width:36px}
+  .mTab .mtX{
+    display:none; width:16px; height:16px; border-radius:50%; border:none; padding:0;
+    line-height:1; font-size:11px; font-weight:800; background:rgba(255,255,255,.14); color:var(--ink-hi);
+  }
+  .mTab[aria-pressed="true"] .mtX{display:inline-flex; align-items:center; justify-content:center}
+  .mTab .mtX.arm{background:var(--red); color:#fff}
+  #mapAdd{
+    flex:0 0 auto; width:26px; height:26px; border-radius:50%; padding:0;
+    border:1.5px dashed var(--edge-2); background:transparent; color:var(--amber);
+    font-size:15px; font-weight:700; line-height:1;
+  }
   #cv{position:absolute; inset:0; width:100%; height:100%; touch-action:none}
   #planLayer{position:absolute; inset:0; overflow:hidden; pointer-events:none}
   #planLayer .chip{position:absolute; pointer-events:auto}
@@ -837,7 +863,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.36</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.37</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -856,6 +882,7 @@
       <canvas id="cv"></canvas>
       <div id="shapeXLayer"></div>
       <div id="planLayer"></div>
+      <div id="mapTabs" title="지도 탭 — 탭마다 그림·지도배경·말 배치가 따로 저장됩니다. 이름은 두 번 탭해 수정"></div>
     </div>
 
     <div class="zoom">
@@ -1729,8 +1756,16 @@
     lane.querySelector(".laneTitle").focus();
   });
 
+  /* ── 지도 탭: 보드 하나에 지도 여러 장 — 각 장이 {n(이름), strokes, view, geo}를 독립 보유.
+        전역 strokes/view/geo는 활성 탭(maps[mi])의 것을 가리키고, 전환·저장 때 동기화 ── */
+  var maps=(SAVED&&SAVED.maps&&SAVED.maps.length)?SAVED.maps
+    :[{n:"지도 1", strokes:(SAVED&&SAVED.strokes)||[], view:(SAVED&&SAVED.view)||{s:1,tx:0,ty:0}, geo:(SAVED&&SAVED.geo)||null}];
+  maps.forEach(function(m){ if(!m.strokes) m.strokes=[]; if(!m.view) m.view={s:1,tx:0,ty:0}; });
+  var mi=(SAVED&&SAVED.mi>=0&&SAVED.mi<maps.length)?SAVED.mi:0;
+  function syncMapState(){ if(maps[mi]){ maps[mi].strokes=strokes; maps[mi].view=view; maps[mi].geo=geo; } }
+
   /* ── 뷰포트 (평면도 확대·이동) ── */
-  var view=(SAVED&&SAVED.view)||{s:1, tx:0, ty:0};
+  var view=maps[mi].view;
   var wrap=document.getElementById("canvasWrap");
   var planLayer=document.getElementById("planLayer");
   var cv=document.getElementById("cv"), ctx=cv.getContext("2d");
@@ -1745,7 +1780,7 @@
   /* ── 실제 지도 배경 (OpenStreetMap 타일) ──
      보드에 지리 기준점(geo.lat/lng)을 저장하고 월드 좌표를 웹 메르카토르(z17 픽셀)에 고정.
      말·그림·심볼은 월드 좌표 그대로라 지도 위 실제 위치에 붙는다. */
-  var geo=(SAVED&&SAVED.geo)||null;   /* {on, lat, lng} — 보드별 저장·동기화 */
+  var geo=maps[mi].geo;   /* {on, lat, lng} — 지도 탭별 저장·동기화 */
   var TILE=256, BASEZ=17;
   var tileCache={}, tileOrder=[], geoO=null;
   /* 위성사진 모드 — 기기별 설정 (Esri World Imagery) */
@@ -1946,7 +1981,7 @@
      여기서 호출하면 redraw가 미정의 strokes를 참조해 부트 전체가 죽는다 */
 
   /* ── 캔버스: 펜/도형 그리기 + 두 손가락 팬/줌 ── */
-  var strokes=(SAVED&&SAVED.strokes)||[], cur=null, tool="pen";
+  var strokes=maps[mi].strokes, cur=null, tool="pen";
   var curGroup=null;   /* 방면 Ⓐ~Ⓓ 묶음 배치 중 */
   /* 그리기 옵션: 펜 색상 6종·굵기 3단계, 지우개 크기 3단계 */
   var PEN_COLORS=["#22262A","#E0432D","#1D4ED8","#1E7233","#D97F1E","#7A4EC5","#FFFFFF"];
@@ -2919,11 +2954,93 @@
     if(strokes.length){ strokes.pop(); redraw(); rebuildShapeX(); scheduleSave(); }
   });
 
+  /* ── 지도 탭 UI: 전환·추가·이름변경(더블탭)·삭제(× 두 번) ── */
+  var mapTabsEl=document.getElementById("mapTabs");
+  function switchMap(i){
+    if(i===mi||!maps[i]) return;
+    syncMapState();
+    deselectShape();
+    mi=i;
+    strokes=maps[mi].strokes; view=maps[mi].view; geo=maps[mi].geo; geoO=null;
+    updateMapUi();
+    applyView();          /* redraw + 말 위치/표시 + 저장 */
+    renderMapTabs();
+  }
+  function renderMapTabs(){
+    mapTabsEl.textContent="";
+    maps.forEach(function(m,i){
+      var b=document.createElement("button");
+      b.className="mTab";
+      b.setAttribute("aria-pressed", i===mi?"true":"false");
+      var nm=document.createElement("span");
+      nm.className="mtName"; nm.textContent=m.n||("지도 "+(i+1));
+      b.appendChild(nm);
+      if(maps.length>1){
+        var x=document.createElement("span");
+        x.className="mtX"; x.textContent="×"; x.setAttribute("role","button"); x.setAttribute("aria-label","이 지도 탭 삭제");
+        x.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+        x.addEventListener("click",function(e){
+          e.stopPropagation();
+          if(!x.classList.contains("arm")){
+            x.classList.add("arm");
+            setTimeout(function(){ x.classList.remove("arm"); },1600);
+            return;
+          }
+          deleteMap(i);
+        });
+        b.appendChild(x);
+      }
+      b.addEventListener("click",function(){ if(i!==mi) switchMap(i); });
+      b.addEventListener("dblclick",function(){
+        if(i!==mi) return;
+        nm.setAttribute("contenteditable","true");
+        nm.focus();
+        var sel=window.getSelection(), rg=document.createRange();
+        rg.selectNodeContents(nm); sel.removeAllRanges(); sel.addRange(rg);
+        function commit(){
+          nm.removeAttribute("contenteditable");
+          var t=nm.textContent.trim().slice(0,12);
+          if(t&&t!==maps[i].n){ maps[i].n=t; log("지도 탭 이름: "+t); scheduleSave(); }
+          renderMapTabs();
+        }
+        nm.addEventListener("blur",commit,{once:true});
+        nm.addEventListener("keydown",function(ev){ if(ev.key==="Enter"){ ev.preventDefault(); nm.blur(); } });
+      });
+      mapTabsEl.appendChild(b);
+    });
+    var add=document.createElement("button");
+    add.id="mapAdd"; add.textContent="＋"; add.setAttribute("aria-label","지도 탭 추가");
+    add.addEventListener("click",function(){
+      syncMapState();
+      maps.push({n:"지도 "+(maps.length+1), strokes:[], view:{s:1,tx:0,ty:0}, geo:null});
+      log("지도 탭 추가: "+maps[maps.length-1].n);
+      switchMap(maps.length-1);
+    });
+    mapTabsEl.appendChild(add);
+  }
+  function deleteMap(i){
+    if(maps.length<2||!maps[i]) return;
+    /* 이 탭에 배치된 말은 미배치로 회수, 뒤 탭 말들의 소속 번호 당김 */
+    planLayer.querySelectorAll(".chip").forEach(function(c){
+      var cm=+(c.dataset.mi||0);
+      if(cm===i){ placeInFlow(c, tray); }
+      else if(cm>i){ c.dataset.mi=cm-1; }
+    });
+    var name=maps[i].n||("지도 "+(i+1));
+    maps.splice(i,1);
+    if(mi>=i) mi=Math.max(0, mi-1);
+    strokes=maps[mi].strokes; view=maps[mi].view; geo=maps[mi].geo; geoO=null;
+    deselectShape();
+    updateMapUi(); applyView(); renderMapTabs(); refreshCounts();
+    log("지도 탭 삭제: "+name+" (배치된 말은 미배치로 회수)");
+  }
+  renderMapTabs();
+
   /* 전체 지우기: 두 번 눌러 확정 */
   var clearBtn=document.getElementById("clearBtn"), clearTimer=null;
   clearBtn.addEventListener("click",function(){
     if(clearBtn.classList.contains("arm")){
-      strokes=[]; redraw(); rebuildShapeX(); log("평면도 전체 지움");
+      strokes.length=0; redraw(); rebuildShapeX(); log("평면도 전체 지움: "+(maps[mi].n||"지도"));
       clearBtn.classList.remove("arm"); clearBtn.textContent="전체 지우기";
       clearTimeout(clearTimer);
     }else{
@@ -3006,7 +3123,7 @@
     if(d.z==="lane"&&laneList.children[d.i]){
       laneList.children[d.i].querySelector(".laneBody").appendChild(chip);
     }else if(d.z==="plan"){
-      placeOnPlan(chip,d.x,d.y);
+      placeOnPlan(chip,d.x,d.y,d.m||0);
     }else{
       tray.appendChild(chip);
     }
@@ -3020,17 +3137,19 @@
     return b ? b.dataset.lane : "?";
   }
   function placeInFlow(chip, body){
-    chip.style.left=""; chip.style.top=""; chip.style.transform="";
-    delete chip.dataset.wx; delete chip.dataset.wy;
+    chip.style.left=""; chip.style.top=""; chip.style.transform=""; chip.style.display="";
+    delete chip.dataset.wx; delete chip.dataset.wy; delete chip.dataset.mi;
     body.appendChild(chip);
   }
-  function placeOnPlan(chip, wx, wy){
+  function placeOnPlan(chip, wx, wy, m){
     chip.dataset.wx=wx; chip.dataset.wy=wy;
+    chip.dataset.mi=(m==null?mi:m);   /* 어느 지도 탭에 놓였는지 */
     chip.style.transform="";
     planLayer.appendChild(chip);
     positionPlanChip(chip);
   }
   function positionPlanChip(chip){
+    chip.style.display=(+(chip.dataset.mi||0)===mi)?"":"none";   /* 활성 탭의 말만 표시 */
     chip.style.left=(chip.dataset.wx*view.s+view.tx-HALF)+"px";
     chip.style.top =(chip.dataset.wy*view.s+view.ty-HALF)+"px";
   }
@@ -3058,7 +3177,7 @@
     if(!el) return null;
     var body=el.closest(".laneBody");
     if(body) return {type:"lane", body:body};
-    if(el.closest(".side")||el.closest(".splitter")||el.closest(".shapeMenu")||el.closest(".zoom")||el.closest(".tools")||el.closest(".topbar")) return null;
+    if(el.closest(".side")||el.closest(".splitter")||el.closest(".shapeMenu")||el.closest(".zoom")||el.closest(".tools")||el.closest(".topbar")||el.closest("#mapTabs")) return null;
     if(el.closest(".canvasWrap")) return {type:"plan"};
     return null;
   }
@@ -4372,7 +4491,7 @@
       l.querySelectorAll(".chip").forEach(function(c){ push(c,{z:"lane", i:i}); });
     });
     planLayer.querySelectorAll(".chip").forEach(function(c){
-      push(c,{z:"plan", x:+c.dataset.wx, y:+c.dataset.wy});
+      push(c,{z:"plan", x:+c.dataset.wx, y:+c.dataset.wy, m:+(c.dataset.mi||0)});
     });
     var lanes=Array.prototype.map.call(laneList.children,function(l){
       return l.querySelector(".laneBody").dataset.lane;
@@ -4384,8 +4503,10 @@
     Object.keys(ckState).forEach(function(rid){
       ckd[rid]=Object.keys(ckState[rid]).map(Number);
     });
+    syncMapState();
     return {
       v:1, incident:incidentEl.textContent, view:view, strokes:strokes, geo:geo,
+      maps:maps, mi:mi,
       lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd, rdc:rdState, em:emState,
       ui:{ prio:cardUi(panels.prio.panel), lane:cardUi(panels.lane.panel),
            ck:cardUi(panels.ck.panel), rd:cardUi(panels.rd.panel), log:cardUi(logCard),
@@ -4549,8 +4670,18 @@
     syncApplying=true;
     try{
       incidentEl.textContent=st.incident||"";
-      geo=st.geo||null; geoO=null; updateMapUi();
-      strokes=st.strokes||[]; redraw(); rebuildShapeX();
+      var incoming=(st.maps&&st.maps.length)?st.maps
+        :[{n:"지도 1", strokes:st.strokes||[], view:st.view||{s:1,tx:0,ty:0}, geo:st.geo||null}];
+      incoming.forEach(function(m,i){
+        if(!m.strokes) m.strokes=[];
+        if(maps[i]&&maps[i].view) m.view=maps[i].view;   /* 확대/이동은 기기별 설정 유지 */
+        else if(!m.view) m.view={s:1,tx:0,ty:0};
+      });
+      maps=incoming;
+      if(mi>=maps.length) mi=maps.length-1;
+      strokes=maps[mi].strokes; view=maps[mi].view; geo=maps[mi].geo; geoO=null;
+      updateMapUi(); renderMapTabs();
+      redraw(); rebuildShapeX();
       laneList.textContent="";
       ((st.lanes&&st.lanes.length)?st.lanes:LANES).forEach(function(n){
         laneList.appendChild(makeLane(n));
