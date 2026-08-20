@@ -660,6 +660,42 @@
   #aiKeyIn:focus,#aiModelIn:focus{outline:none; border-color:var(--amber)}
   .aiKeyLbl{font-size:11.5px; font-weight:700; color:var(--ink-lo); margin:0 0 -8px}
 
+  /* ── 출동대 정보 카드 (말 더블-탭) ── */
+  #chipInfoModal{
+    position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.45);
+  }
+  #chipInfoModal[hidden]{display:none}
+  #chipInfoModal .chipCard{width:min(430px,92vw); max-height:86vh}
+  #ciBody{flex:1; min-height:0; overflow-y:auto; scrollbar-width:thin; display:flex; flex-direction:column; gap:12px}
+  .ciHead{display:flex; align-items:center; gap:10px}
+  .ciHead .dot{width:14px; height:14px; border-radius:50%; flex:0 0 auto; box-shadow:0 0 0 1px rgba(255,255,255,.3)}
+  .ciHead .nm{font-size:18px; font-weight:800}
+  .ciHead .tp{font-size:12px; font-weight:700; color:var(--ink-lo)}
+  .ciSec{display:flex; flex-direction:column; gap:6px}
+  .ciLbl{font-size:11px; font-weight:800; letter-spacing:.14em; color:var(--ink-lo)}
+  .ciCrew{
+    background:var(--bg2); border:1px solid var(--edge); border-radius:9px; padding:9px 11px;
+    font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-all;
+  }
+  .ciCrew.empty{color:var(--ink-lo); font-weight:600}
+  .ciSpec{display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13px;
+    background:var(--bg2); border:1px solid var(--edge); border-radius:9px; padding:9px 11px}
+  .ciSpec .k{color:var(--ink-lo); font-weight:700; white-space:nowrap}
+  .ciSpec .v{font-weight:700}
+  .ciNote{font-size:12px; color:var(--ink-lo); line-height:1.5}
+  .ciList{display:flex; flex-direction:column; gap:4px; font-size:12.5px; font-weight:600;
+    background:var(--bg2); border:1px solid var(--edge); border-radius:9px; padding:9px 11px; line-height:1.5}
+  .ciTelRow{display:flex; flex-wrap:wrap; gap:7px}
+  a.telBtn{
+    display:inline-flex; align-items:center; gap:6px; text-decoration:none;
+    border:1px solid var(--edge-2); background:var(--bg2); color:var(--ink-hi);
+    border-radius:99px; padding:7px 13px; font-size:12.5px; font-weight:700;
+  }
+  a.telBtn b{color:var(--amber); font-weight:800}
+  a.telBtn:active{border-color:var(--amber)}
+  .ciSrc{font-size:10.5px; color:var(--ink-lo); font-weight:600}
+
   /* ── 보드 목록 페이지 ── */
   #homePage{
     position:fixed; inset:0; z-index:90; display:flex; flex-direction:column;
@@ -781,7 +817,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.27</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.28</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -911,6 +947,20 @@
   <input type="file" id="aiFile" accept="image/*" capture="environment" hidden>
   <div class="laneBody" id="tray" data-lane="미배치"></div>
 </footer>
+
+<div id="chipInfoModal" hidden>
+  <div class="chipCard">
+    <h3>출동대 정보 <span style="letter-spacing:0;font-weight:600">— 말을 두 번 탭하면 열립니다</span></h3>
+    <div id="ciBody"></div>
+    <div class="chipActions">
+      <button class="btn" id="ciContacts" title="연락처 JSON 파일을 이 기기에 불러옵니다">연락처 파일</button>
+      <span class="grow"></span>
+      <button class="btn" id="ciEdit">말 편집</button>
+      <button class="btn primary" id="ciClose">닫기</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="ciFile" accept=".json,application/json" hidden>
 
 <div id="chipModal" hidden>
   <div class="chipCard">
@@ -2691,12 +2741,13 @@
     planLayer.querySelectorAll(".chip").forEach(positionPlanChip);
   }
 
-  /* ── 칩 드래그 (탭이면 편집 모달) ── */
+  /* ── 칩 드래그 (탭=편집, 더블탭=출동대 정보) ── */
   var drag=null;
+  var tapLast={}, tapTimer=null;
   function dragStart(e){
     if(drag) return;
     var chip=e.currentTarget;
-    chip.setPointerCapture(e.pointerId);
+    try{ chip.setPointerCapture(e.pointerId); }catch(err){}
     drag={chip:chip, id:e.pointerId, x:e.clientX, y:e.clientY, t0:Date.now(),
           moved:false, over:null, from:chipZone(chip)};
     chip.classList.add("lift");
@@ -2732,11 +2783,19 @@
     var chip=drag.chip, from=drag.from;
     if(drag.over) drag.over.classList.remove("over");
 
-    /* 탭(이동 없음) → 말 편집 */
+    /* 탭(이동 없음): 한 번 = 말 편집(잠깐 대기), 두 번 = 출동대 정보(분대·제원·연락처) */
     if(!drag.moved && Date.now()-drag.t0<600){
       chip.style.transform="";
       cleanup(chip);
-      openChipEditor(chip);
+      var now=Date.now();
+      if(tapLast.chip===chip && now-tapLast.t<340){
+        clearTimeout(tapTimer); tapTimer=null; tapLast={};
+        openChipInfo(chip);
+      }else{
+        tapLast={chip:chip, t:now};
+        clearTimeout(tapTimer);
+        tapTimer=setTimeout(function(){ tapLast={}; openChipEditor(chip); },340);
+      }
       return;
     }
 
@@ -2774,6 +2833,199 @@
     drag=null;
     flushRemote();   /* 드래그 중 보류해 둔 원격 갱신 적용 */
   }
+
+  /* ── 출동대 정보 카드: 분대(대원)·차량 제원·연락처 ─────────────────
+        · 제원: 특수소방차량 현황 및 주요제원('23.3.31, 울산소방본부) + 소방차량 현황('26.7.30) 기준
+        · 연락처: 수보용 내부자료라 공개 저장소(앱 코드)에 넣지 않음 —
+          "연락처 파일" 버튼으로 기기에 JSON을 1회 불러와 localStorage에만 저장 ── */
+  /* 특수차량 정밀 제원 — 말 이름 → {t:차종, s:[[항목,값]], n:특이사항} */
+  var VINFO={
+    "유곡굴절":{t:"굴절차 45m", s:[["방수량","3,800 ℓ/min"],["작업높이","45 m"],["케이지","400 ㎏"],["아웃트리거","8 m"]], n:"사다리 360° 회전 (브론토 '11)"},
+    "유곡사다리":{t:"굴절차 70m", s:[["방수량","3,800 ℓ/min"],["작업높이","70 m"],["케이지","350 ㎏"],["아웃트리거","7.4 m"]], n:"굴절붐 360° 회전, 작업반경 전면 26.5m·측면 23.5m·후면 17m (현대에버다임 '21)"},
+    "태화사다리":{t:"소형사다리차 18m", s:[["방수량","2,800 ℓ/min"],["물탱크","2,000 L"],["폼탱크","100 L"],["작업높이","18 m"],["케이지","200 ㎏"]], n:"사다리 360° 회전, 소방펌프차 겸용 — 5층 이하"},
+    "삼산사다리":{t:"소형사다리차 15m", s:[["방수량","2,800 ℓ/min"],["물탱크","2,000 L"],["폼탱크","100 L"],["작업높이","15 m"]], n:"사다리 360° 회전, 펌프차 겸용, 케이지 없음 — 5층 이하"},
+    "삼산굴절":{t:"굴절차 55m", s:[["방수량","3,800 ℓ/min"],["작업높이","55 m"],["케이지","500 ㎏"],["아웃트리거","6 m"]], n:"같은 위치 반복구조(자동), 사다리 360° 회전 (첼라 '14)"},
+    "무거사다리":{t:"굴절차 27m", s:[["방수량","2,800 ℓ/min"],["작업높이","27 m"],["케이지","350 ㎏"],["아웃트리거","6 m"]], n:"굴절붐 360° 회전, 9층 이하"},
+    "삼산화학":{t:"고성능화학차", s:[["물탱크","7,000 L"],["폼탱크","2,000 L"],["분말","250 ㎏"],["방수량","루프 6,000 · 범퍼 1,500 ℓ/min"]], n:"주행 중 방수, C.A.F.S, 과압방지방수구 2개"},
+    "장생포화학":{t:"고성능화학차", s:[["물탱크","7,000 L"],["폼탱크","2,000 L"],["분말","250 ㎏"],["방수량","루프 6,000 · 범퍼 1,500 ℓ/min"]], n:"주행 중 방수, C.A.F.S, 과압방지방수구 2개"},
+    "공단화학":{t:"내폭굴절화학차 20m", s:[["물탱크","9,000 L"],["폼탱크","2,000 L"],["분말","250 ㎏"],["방수량","루프 6,000 · 범퍼 1,500 ℓ/min"],["작업높이","20 m"]], n:"붐 전개 시 방수 4,500 ℓ/min, 굴절붐 360° 무한회전, C.A.F.S, 주행 중 방수"},
+    "여천무인":{t:"무인파괴방수차", s:[["방수량","6,000 ℓ/min"],["물탱크","3,000 L"],["폼탱크","1,000 L"],["작업높이","44 m"]], n:"장애물 파괴 후 방수, 사다리 360° 회전 (브론토 '12)"},
+    "삼산조연":{t:"조연차", s:[["송풍량","3,250 ㎥/min"],["폼탱크","400 L (300배 이상)"],["발전기","30 ㎾"],["조명","LED 150W×6"]], n:"양압·음압 배연, 미분무 방수, 이동식 고발포기"},
+    "옥동약제":{t:"소화약제탱크차", s:[["폼탱크","3,000 L"]], n:"친환경 포소화약제 3% — A급·B급(유류) 적응"},
+    "공단약제":{t:"소화약제탱크차", s:[["폼탱크","6,000 L"]], n:"친환경 포소화약제 3% — A급·B급(유류) 적응"},
+    "화암사다리":{t:"사다리차 53m", s:[["방수량","2,800 ℓ/min"],["작업높이","53 m"],["승강기","200 ㎏"],["아웃트리거","6 m"]], n:"사다리 360° 회전, 발전기 5㎾"},
+    "화암굴절":{t:"굴절차 28m", s:[["방수량","2,800 ℓ/min"],["작업높이","28 m"],["케이지","350 ㎏"],["아웃트리거","6 m"]], n:"굴절붐 360° 회전, 9층 이하"},
+    "화암화학":{t:"고성능화학차", s:[["물탱크","7,000 L"],["폼탱크","2,000 L"],["분말","250 ㎏"],["방수량","루프 6,000 · 범퍼 1,500 ℓ/min"]], n:"주행 중 방수, C.A.F.S, 과압방지방수구 2개"},
+    "화암무인":{t:"무인파괴방수차", s:[["방수량","6,000 ℓ/min"],["물탱크","1,000 L"],["폼탱크","3,000 L"],["작업높이","44 m"]], n:"같은 위치 반복구조(자동), 사다리 360° 회전 (첼라 '14)"},
+    "화암조연":{t:"조연차", s:[["송풍량","3,250 ㎥/min"],["폼탱크","400 L (300배 이상)"],["발전기","30 ㎾"],["조명","LED 150W×6"]], n:"양압·음압 배연, 미분무 방수, 이동식 고발포기"},
+    "송정사다리":{t:"사다리차 53m", s:[["방수량","2,800 ℓ/min"],["작업높이","53 m"],["승강기","200 ㎏"],["아웃트리거","6 m"]], n:"사다리 360° 회전, 유압발전기 5㎾"},
+    "송정굴절":{t:"굴절차 28m", s:[["방수량","2,800 ℓ/min"],["작업높이","28 m"],["케이지","350 ㎏"],["아웃트리거","6 m"]], n:"굴절붐 360° 회전, 9층 이하"},
+    "송정조연":{t:"조연차", s:[["송풍량","3,250 ㎥/min"],["폼탱크","400 L (300배 이상)"],["발전기","30 ㎾"],["조명","LED 300W×6"]], n:"양압·음압 배연, 미분무 방수, 이동식 고발포기"},
+    "온산사다리":{t:"사다리차 53m", s:[["방수량","2,800 ℓ/min"],["작업높이","53 m"],["승강기","200 ㎏"],["아웃트리거","6 m"]], n:"사다리 360° 회전, 유압발전기 5㎾"},
+    "화산굴절":{t:"굴절차 28m", s:[["방수량","2,800 ℓ/min"],["작업높이","28 m"],["케이지","350 ㎏"],["아웃트리거","6 m"]], n:"굴절붐 360° 회전, 9층 이하 ('23 자료엔 온산 배치)"},
+    "온산화학":{t:"고성능화학차(대형)", s:[["물탱크","10,000 L (폼 겸용)"],["폼탱크","8,000 L (수성막포)"],["방수량","루프 13,000 ℓ/min"]], n:"150㎜ 방수·흡수구, 과압방지방수구 2개 (로젠바우어 '21)"},
+    "화산화학":{t:"내폭화학차", s:[["물탱크","9,000 L"],["폼탱크","1,100 L"],["분말","250 ㎏"],["방수량","루프 6,000 · 범퍼 1,500 ℓ/min"]], n:"운전실 방폭, 주행 중 방수, C.A.F.S(루프)"},
+    "온산무인":{t:"무인파괴방수차", s:[["방수량","루프 6,000 · 범퍼 1,500 · 피어싱 1,000 ℓ/min"],["물탱크","10,000 L"],["폼탱크","계면 400 + 수성 800 L"],["분말","250 ㎏"],["작업높이","20 m (반경 14 m)"]], n:"물·폼·분말 동시 방사, 주행 중 방수, C.A.F.S"},
+    "온산약제":{t:"소화약제탱크차", s:[["폼탱크","6,000 L"]], n:"수성막포(AFFF) 1% — B급(유류화재) 적응"},
+    "온산조연":{t:"조연차", s:[["송풍량","3,250 ㎥/min"],["폼탱크","400 L (300배 이상)"],["발전기","30 ㎾"],["조명","LED 150W×6"]], n:"양압·음압 배연, 미분무 방수, 이동식 고발포기"},
+    "언양굴절":{t:"굴절차 28m", s:[["방수량","2,800 ℓ/min"],["작업높이","28 m"],["케이지","350 ㎏"],["아웃트리거","6 m"]], n:"굴절붐 360° 회전, 9층 이하"},
+    "언양화학":{t:"고성능화학차", s:[["물탱크","7,000 L"],["폼탱크","2,000 L"],["분말","250 ㎏"],["방수량","루프 6,000 · 범퍼 1,500 ℓ/min"]], n:"주행 중 방수, C.A.F.S, 과압방지방수구 2개"},
+    "범서사다리":{t:"사다리차 53m", s:[["방수량","2,800 ℓ/min"],["작업높이","53 m"],["케이지","200 ㎏"],["아웃트리거","6 m"]], n:"사다리 360° 회전, 승강기·케이지"}
+  };
+  /* 센터별 보유차량 (소방차량 현황 '26.7.30) */
+  var FLEET={"유곡":["사다리차 · 현대에버다임소방사다리차('26년식, 2인승)","중형 소방물탱크차 · 노부스('17년식, 2인승)","중형 펌프차 · 메가트럭('19년식, 5인승)","특수구급차 · 스타리아('21년식, 6인승)","굴절차 · 볼보 FM500('21년식, 2인승)","음압구급차 · 쏠라티('25년식, 6인승)"],"성남":["중형 펌프차 · 메가트럭('15년식, 5인승)","특수구급차 · 스타리아('25년식, 6인승)"],"병영":["중형 소방물탱크차 · 뉴파워트럭('23년식, 2인승)","중형 펌프차 · 메가트럭('17년식, 5인승)","특수구급차 · 스타리아('22년식, 6인승)","특수구급차 · 그랜드스타렉스('20년식, 6인승)"],"태화":["특수구급차 · 그랜드스타렉스('19년식, 6인승)","중형 펌프차 · 메가트럭('18년식, 5인승)","중형 펌프차 · 메가트럭('15년식, 5인승)","사다리차 · 볼보 FL('22년식, 5인승)","특수구급차 · 스타리아('25년식, 6인승)"],"삼산":["고성능화학차 · 벤츠('16년식, 6인승)","중형 소방물탱크차 · 프리마('17년식, 2인승)","조연차 · 메가트럭('18년식, 2인승)","사다리차 · 볼보 FL('19년식, 5인승)","특수구급차 · 스타리아('21년식, 6인승)","굴절차 · 볼보 FMX500('14년식, 2인승)","중형 펌프차 · 파비스('22년식, 5인승)","특수구급차 · 스타리아('25년식, 6인승)"],"여천":["중형 펌프차 · 메가트럭('16년식, 5인승)","특수구급차 · 그랜드스타렉스('20년식, 6인승)","중형 소방물탱크차 · 파워텍('21년식, 2인승)","무인파괴방수차 · 진우파괴방수차('26년식, 2인승)"],"신정":["특수구급차 · 스타리아('22년식, 6인승)","중형 펌프차 · 메가트럭('15년식, 5인승)","특수구급차 · 스타리아('22년식, 6인승)","경형 펌프차 · 현대포터EV('25년식, 2인승)"],"장생포":["고성능화학차 · 벤츠('16년식, 6인승)","중형 펌프차 · 메가트럭('17년식, 5인승)","중형 펌프차 · 메가트럭('15년식, 5인승)"],"무거":["중형 펌프차 · 메가트럭('16년식, 5인승)","중형 소방물탱크차 · 프리마('18년식, 2인승)","특수구급차 · 스타리아('21년식, 6인승)","사다리차 · 에버다임고가사다리소방차('25년식, 2인승)"],"공단":["특수구급차 · 스타리아('22년식, 6인승)","중형 펌프차 · 메가트럭('17년식, 5인승)","내폭화학차 · 벤츠('18년식, 2인승)","소방물탱크차(급수지원) · 만 TGX510('22년식, 2인승)"],"옥동":["중형 펌프차 · 메가트럭('17년식, 5인승)","특수구급차 · 성우스타리아소방특수구급차(4WD)('24년식, 6인승)","대형 소방물탱크차 · 타타대우 맥쎈('22년식, 2인승)"],"화암":["사다리차 · 볼보 FM450('12년식, 2인승)","무인파괴방수차 · 볼보 FMX500('14년식, 2인승)","특수구급차 · 그랜드스타렉스('19년식, 6인승)","굴절차 · 볼보 FM450('15년식, 2인승)","중형 소방물탱크차 · 프리마('17년식, 2인승)","조연차 · 메가트럭('18년식, 2인승)","고성능화학차 · 벤츠 아록스('18년식)","특수구급차 · 그랜드스타렉스('20년식, 6인승)","중형 펌프차 · 메가트럭('21년식, 5인승)","음압구급차 · 쏠라티('22년식, 6인승)"],"화정":["중형 펌프차 · 메가트럭('21년식, 5인승)","중형 펌프차 · 메가트럭('18년식, 5인승)","특수구급차 · 스타리아('22년식, 6인승)"],"전하":["소형 소방물탱크차 · 메가트럭('14년식, 2인승)","중형 펌프차 · 파비스('22년식, 5인승)","특수구급차 · 그랜드스타렉스('19년식, 6인승)"],"송정":["사다리차 · 에버다임고가사다리소방차('16년식, 2인승)","중형 펌프차 · 진화소방펌프자동차('18년식, 5인승)","조연차 · 이엔쓰리조연소방차('18년식, 2인승)","굴절차 · D에버다임굴절탑소방차('18년식, 2인승)","특수구급차 · 성우스타리아소방특수구급차(4WD)('21년식, 6인승)","음압구급차 · 쏠라티('25년식, 6인승)","무인파괴방수차 · 진우파괴방수차('24년식, 2인승)","대형 대형물탱크차 · 신정대형물탱크차('25년식, 2인승)"],"농소":["중형 소방물탱크차 · 우리6톤물탱크소방펌프자동차('15년식, 2인승)","특수구급차 · 성우스타리아소방특수구급차(4WD)('23년식, 6인승)","중형 펌프차 · 진화소방펌프자동차('19년식, 5인승)"],"매곡":["중형 소방물탱크차 · 파이어스물탱크소방자동차('18년식, 2인승)","중형 펌프차 · 진화소방펌프자동차('19년식, 5인승)","특수구급차 · 오텍스타리아특수구급차('21년식, 6인승)","중형 산불진화차 · 에프원텍중형산불진화차('26년식, 4인승)"],"염포":["소형 펌프차 · 에프원텍펌프소방차('17년식, 5인승)","중형 펌프차 · 파이어스소방펌프차('17년식, 5인승)","특수구급차 · 오텍스타리아특수구급차('24년식, 5인승)","중형 소방물탱크차 · 파이어스물탱크소방차('22년식, 2인승)","중형 일반화학차 · 파이어스화학소방펌프차('18년식, 5인승)"],"강동":["소형 펌프차 · 에프원텍펌프소방차('17년식, 5인승)","중형 펌프차 · 진화소방펌프자동차('17년식, 5인승)","중형 소방물탱크차 · 에프원텍소방물탱크차('23년식, 2인승)","특수구급차 · GVT스타리아소방특수구급차4WD('25년식, 6인승)"],"온산":["특수구급차 · 성우스타리아소방특수구급차(4WD)('22년식, 6인승)","사다리차 · 에버다임고가사다리소방차('16년식, 2인승)","중형 펌프차 · 파이어스소방펌프차('17년식, 5인승)","조연차 · 이엔쓰리조연소방차('18년식, 2인승)","무인파괴방수차 · 로젠바우어무인파괴방수탑차('19년식, 2인승)","내폭화학차 · 로젠바우어내폭화학소방차('13년식, 4인승)","특수구급차 · 오텍그랜드스타렉스특수구급차('19년식, 6인승)"],"화산":["굴절차 · 에버다임굴절탑소방차('17년식, 2인승)","중형 소방물탱크차 · 에프원텍소방물탱크차('23년식, 2인승)","고성능화학차 · 로젠바우어고성능화학차('21년식, 2인승)","중형 펌프차 · 파이어스소방펌프차('17년식, 5인승)","특수구급차 · 오텍스타리아 특수구급차('23년식, 6인승)","음압구급차 · 오텍('23년식, 6인승)"],"온양":["중형 펌프차 · 진화소방펌프자동차('17년식, 5인승)","특수구급차 · 오텍스타리아 특수구급차('23년식, 6인승)","중형 소방물탱크차 · 이엔플러스소방물탱크차('21년식, 2인승)","소형 펌프차 · 진화소방펌프자동차('21년식, 5인승)"],"웅촌":["중형 일반화학차 · 우리소방화학차('23년식, 5인승)","중형 펌프차 · 진화소방펌프자동차('16년식, 5인승)","중형 소방물탱크차 · 이엔쓰리물탱크소방차('17년식, 2인승)","특수구급차 · GVT스타리아소방특수구급차('24년식, 5인승)"],"청량":["중형 펌프차 · 에프원텍펌프소방차('18년식, 5인승)","특수구급차 · 스타리아('25년식, 6인승)","중형 산불진화차 · 에프원텍중형산불진화차('26년식, 4인승)"],"서생":["중형 펌프차 · 진화소방펌프자동차('15년식, 5인승)","특수구급차 · 스타리아('25년식, 6인승)"],"삼동":["중형 펌프차 · 메가트럭('21년식, 5인승)","특수구급차 · 그랜드스타렉스('19년식, 6인승)"],"언양":["중형 소방물탱크차 · 타타대우 맥쎈('22년식, 2인승)","굴절차 · 볼보 FM370('16년식, 2인승)","고성능화학차 · 벤츠 아록스('18년식, 6인승)","특수구급차 · 스타리아('23년식, 6인승)","음압구급차 · 쏠라티('22년식, 6인승)","중형 펌프차 · 파비스('25년식, 5인승)","중형 펌프차 · 메가트럭('19년식, 5인승)","중형 펌프차 · 메가트럭('14년식, 5인승)","대형 산불진화차 · 벤츠 유니목('26년식, 2인승)","펌프차 · 양방향소방차('26년식, 7인승)"],"상북":["소형 펌프차 · 마이티('17년식, 5인승)","특수구급차 · 그랜드스타렉스('20년식, 6인승)","중형 펌프차 · 파비스('22년식, 5인승)","중형 펌프차 · 메가트럭('13년식, 5인승)"],"범서":["소형 펌프차 · 마이티('17년식, 5인승)","중형 소방물탱크차 · 프리마('17년식, 2인승)","사다리차 · 볼보 FM450('18년식, 2인승)","특수구급차 · 스타리아('23년식, 6인승)","중형 펌프차 · 파비스('25년식, 5인승)"],"두서":["중형 펌프차 · 파비스('22년식, 5인승)","특수구급차 · 스타리아('21년식, 6인승)"]};
+  /* 서별 지휘·구조차 */
+  var FLEETW={"본부":{"지휘":["소형 지휘차 · 그랜드스타렉스('20년식, 5인승)","지휘차 · 스타리아('22년식, 9인승)","지휘차 · Mercedes-Benz EQB 300 4MATIC('26년식, 5인승)","소형 지휘차 · 맥스크루즈('17년식, 7인승)","대형 지휘차(통제단) · 볼보 FM450('17년식, 2인승)"],"구조":["구조버스 · 카운티('17년식, 6인승)","산악구조차 · 타스만('25년식, 5인승)","수난구조차 · 렉스턴스포츠칸('24년식, 5인승)","구조공작차 · 이엔플러스 구조공작차('25년식, 5인승)"],"펌프":["중형 펌프차 · 메가트럭('15년식, 5인승)","경형 펌프차 · 봉고3('20년식, 2인승)","중형 펌프차 · 진화소방펌프자동차('15년식, 5인승)","중형 펌프차 · 진화소방펌프자동차('15년식, 5인승)"]},"중부":{"지휘":["지휘차 · 스타리아('22년식, 9인승)"],"구조":["산악구조차 · 싼타페('22년식, 5인승)","구조버스 · 신광소방구조차('25년식, 6인승)","구조공작차 · 노부스('18년식, 5인승)"]},"남부":{"지휘":["지휘차 · 스타리아('22년식, 9인승)"],"구조":["구조버스 · 카운티('23년식, 6인승)","산악구조차 · 맥스크루즈('17년식, 7인승)","구조공작차 · 노부스('18년식, 5인승)"]},"동부":{"지휘":["소형 지휘차 · 스타리아('23년식, 11인승)"],"구조":["구조버스 · 카운티('23년식, 6인승)","산악구조차 · 맥스크루즈('16년식, 6인승)","구조공작차 · 노부스('18년식, 5인승)"]},"북부":{"지휘":["소형 지휘차 · 그랜드스타렉스('18년식, 12인승)"],"구조":["구조공작차 · 우림ENG구조공작차('18년식, 5인승)","구조버스 · 승신소방구조버스('18년식, 6인승)","산악구조차 · 맥스크루즈('18년식, 6인승)"]},"남울주":{"지휘":["소형 지휘차 · 스타리아('23년식, 11인승)"],"구조":["구조공작차 · 승신구조공작장비운반차('22년식, 5인승)","구조버스 · 신광소방구조차('25년식, 6인승)"]},"서울주":{"지휘":["지휘차 · 그랜드스타렉스('20년식, 9인승)"],"구조":["구조버스 · 카운티('22년식, 7인승)","대형 구조공작차 · 노부스('21년식, 5인승)","산악구조차 · 렉스턴('16년식, 5인승)"]}};
+  var CI_SUF_WORDS={P:["펌프"],T:["물탱크"],"구급":["구급"],"음압":["음압"],"사다리":["사다리","굴절","고가"],
+    "굴절":["굴절","사다리"],"화학":["화학"],"조연":["조연","조명","배연"],"약제":["약제"],"무인":["무인"],
+    "구조":["구조"],"지휘":["지휘"]};
+  function chipParse(name){
+    var m=name.match(/^(.{1,4}?)(P|T|구급|구조|굴절|사다리|펌프|탱크|지휘|화학|조연|약제|무인|음압)(\d*)$/);
+    if(!m) return null;
+    var suf=m[2]; if(suf==="펌프") suf="P"; if(suf==="탱크") suf="T";
+    return {st:m[1], suf:suf, num:m[3]||""};
+  }
+  var CI_TYPE_NAME={P:"펌프차",T:"물탱크차","구급":"구급차","음압":"음압구급차","사다리":"고가(사다리)차",
+    "굴절":"굴절차","화학":"화학차","조연":"조연차","약제":"소화약제탱크차","무인":"무인파괴방수차",
+    "구조":"구조대","지휘":"지휘차"};
+  var CONTACTS_K="fireboard-contacts";
+  /* 기본 연락처(구급차 휴대폰·센터 대표번호·구조대·당직) — 수보용 연락처 자료 기준,
+     사용자 승인 하에 앱 내장(2026-08-20). "연락처 파일"로 불러오면 기기별로 덮어씀 */
+  var CONTACTS_DEFAULT={"v":1,"기준":"수보용 유관기관연락처(울산) 자료 기준","amb":{"유곡":"010-7129-4119","성남":"010-6475-6119","병영":"010-3833-9122","언양":"010-3846-1119","태화":"010-3599-9919","범서":"010-8624-6119","두서":"010-2852-8699","삼산1":"010-6721-7119","삼산2":"010-4584-6119","여천":"010-6715-7119","신정":"010-6714-7119","장생포":"010-6716-7119","무거":"010-7152-6119","공단":"010-6746-7119","옥동":"010-6748-7119","화암":"010-4578-3119","화정":"010-6248-2119","전하":"010-4769-3119","온산":"010-9728-5119","화산":"010-7394-5119","온양":"010-4680-9129","웅촌":"010-6702-5119","삼동":"010-7218-5119","청량":"010-9567-5119","서생":"010-9562-5119","송정":"010-3467-6119","농소":"010-3846-0119","매곡":"010-3498-6119","염포":"010-9414-2119","강동":"010-3796-5119"},"center":{"유곡":"052-241-2400","성남":"052-241-2420","병영":"052-241-2440","태화":"052-241-2530","삼산":"052-241-2580","장생포":"052-241-2560","여천":"052-241-2610","신정":"052-241-2630","무거":"052-241-2650","공단":"052-241-2670","옥동":"052-241-2690","화암":"052-241-2720","화정":"052-241-2740","전하":"052-241-2760","송정":"052-229-8200","염포":"052-229-8220","농소":"052-229-8240","매곡":"052-229-8260","강동":"052-229-8280","온산":"052-241-2860","화산":"052-241-2840","온양":"052-241-2890","웅촌":"052-241-2910","청량":"052-241-2930","서생":"052-241-2940","언양":"052-241-2460","두서":"052-241-2550","범서":"052-241-2500","상북":"052-241-2986","삼동":"052-241-2950"},"rescue":{"중부":"052-210-4612","남부":"052-210-4910","동부":"052-279-6510","북부":"052-229-8160","남울주":"052-241-6810","서울주":"052-241-2980","특수단":"052-229-5341","본부":"052-229-5341"},"duty":{"중부":"052-210-4570","남부":"052-210-4870","동부":"052-279-6470","북부":"052-229-8151","남울주":"052-241-6770","서울주":"052-241-2995","본부":"052-229-4620","통제단":"052-229-4620"}};
+  function ciContactsData(){
+    try{ var j=JSON.parse(localStorage.getItem(CONTACTS_K)||"null"); if(j) return j; }catch(e){}
+    return CONTACTS_DEFAULT;
+  }
+  var chipInfoModal=document.getElementById("chipInfoModal");
+  var ciBody=document.getElementById("ciBody");
+  var ciFile=document.getElementById("ciFile");
+  var infoChip=null;
+  function ciEl(tag,cls,text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  function ciTelLink(label,num){
+    var a=document.createElement("a");
+    a.className="telBtn"; a.href="tel:"+num.replace(/[^\d+]/g,"");
+    var b=document.createElement("b"); b.textContent=label;
+    a.appendChild(b); a.appendChild(document.createTextNode(num));
+    return a;
+  }
+  /* 대원 명단 속 전화번호를 탭 가능한 링크로 */
+  function ciLinkify(text){
+    var box=ciEl("div","ciCrew");
+    var re=/(0\d{1,2}[- ]?\d{3,4}[- ]?\d{4})/g, i=0, m;
+    while((m=re.exec(text))){
+      box.appendChild(document.createTextNode(text.slice(i,m.index)));
+      var a=document.createElement("a"); a.href="tel:"+m[1].replace(/[^\d]/g,"");
+      a.textContent=m[1]; a.style.color="var(--amber)"; a.style.fontWeight="800";
+      box.appendChild(a); i=m.index+m[1].length;
+    }
+    box.appendChild(document.createTextNode(text.slice(i)));
+    return box;
+  }
+  function openChipInfo(chip){
+    infoChip=chip;
+    ciBody.textContent="";
+    var name=chip.dataset.name, pr=chipParse(name);
+    var head=ciEl("div","ciHead");
+    var dot=ciEl("span","dot"); dot.style.background=COLOR_HEX[chipColor(chip)]||COLOR_HEX.gray;
+    head.appendChild(dot);
+    head.appendChild(ciEl("span","nm",name));
+    var vi=VINFO[name];
+    head.appendChild(ciEl("span","tp", vi?vi.t:(pr?CI_TYPE_NAME[pr.suf]||"":"")));
+    ciBody.appendChild(head);
+    /* 1) 분대 · 대원 */
+    var sec=ciEl("div","ciSec");
+    sec.appendChild(ciEl("div","ciLbl","분대 · 대원"));
+    var crew=(chip.dataset.crew||"").trim();
+    if(crew) sec.appendChild(ciLinkify(crew));
+    else{
+      var em=ciEl("div","ciCrew empty",'등록된 대원이 없습니다 — "말 편집"에서 명단을 적거나, 지령서 인식으로 채워집니다');
+      sec.appendChild(em);
+    }
+    ciBody.appendChild(sec);
+    /* 2) 제원 */
+    sec=ciEl("div","ciSec");
+    sec.appendChild(ciEl("div","ciLbl","차량 제원"));
+    if(vi){
+      var g=ciEl("div","ciSpec");
+      vi.s.forEach(function(row){ g.appendChild(ciEl("span","k",row[0])); g.appendChild(ciEl("span","v",row[1])); });
+      sec.appendChild(g);
+      if(vi.n) sec.appendChild(ciEl("div","ciNote",vi.n));
+      sec.appendChild(ciEl("div","ciSrc","특수소방차량 주요제원('23.3.31) 기준"));
+    }else if(pr){
+      var rows=null, src="소방차량 현황('26.7.30) 기준";
+      if(pr.suf==="지휘"||pr.suf==="구조"){
+        var wkey=pr.st==="특수단"||pr.st==="통제단"?"본부":pr.st;
+        var fw=FLEETW[wkey];
+        rows=fw?(pr.suf==="지휘"?fw["지휘"]:fw["구조"])||null:null;
+      }else{
+        var all=FLEET[pr.st]||null;
+        if(all){
+          var words=CI_SUF_WORDS[pr.suf]||[];
+          rows=all.filter(function(d){ return words.some(function(w){ return d.indexOf(w)>=0; }); });
+          if(!rows.length) rows=null;
+        }
+      }
+      if(pr.st==="특수단"&&pr.suf==="P"){ rows=(FLEETW["본부"]||{})["펌프"]||null; src="소방차량 현황('26.7.30) 기준"; }
+      if(rows&&rows.length){
+        var list=ciEl("div","ciList");
+        rows.forEach(function(d){ list.appendChild(ciEl("div",null,"· "+d)); });
+        sec.appendChild(list);
+        sec.appendChild(ciEl("div","ciSrc",src+" — 용수·폼 적재량은 특수차량만 자료에 있음"));
+      }else{
+        sec.appendChild(ciEl("div","ciNote","이 출동대의 차량 자료가 없습니다"));
+      }
+    }else{
+      sec.appendChild(ciEl("div","ciNote","프리셋 형식이 아닌 말은 제원 자료가 없습니다"));
+    }
+    ciBody.appendChild(sec);
+    /* 3) 연락처 */
+    sec=ciEl("div","ciSec");
+    sec.appendChild(ciEl("div","ciLbl","연락처"));
+    var C=ciContactsData();
+    if(!C){
+      sec.appendChild(ciEl("div","ciNote","연락처 자료가 없습니다 — [연락처 파일] 버튼으로 JSON을 불러오세요"));
+    }else if(pr){
+      var tr=ciEl("div","ciTelRow"); var added=0;
+      if(pr.suf==="구급"&&C.amb){
+        var an=C.amb[pr.st+pr.num]||C.amb[pr.st];
+        if(an){ tr.appendChild(ciTelLink("구급차",an)); added++; }
+      }
+      if(pr.suf==="지휘"||pr.suf==="구조"){
+        var wk=(pr.st==="특수단"||pr.st==="통제단")?pr.st:pr.st;
+        if(C.rescue&&C.rescue[wk==="통제단"?"본부":wk]&&pr.suf==="구조"){ tr.appendChild(ciTelLink("구조대",C.rescue[wk==="통제단"?"본부":wk])); added++; }
+        if(C.duty&&C.duty[wk]){ tr.appendChild(ciTelLink("당직",C.duty[wk])); added++; }
+        else if(C.duty&&C.duty[wk==="특수단"?"본부":wk]){ tr.appendChild(ciTelLink("당직",C.duty[wk==="특수단"?"본부":wk])); added++; }
+      }else if(C.center&&C.center[pr.st]){
+        tr.appendChild(ciTelLink("센터",C.center[pr.st])); added++;
+      }
+      if(added){ sec.appendChild(tr); sec.appendChild(ciEl("div","ciSrc","번호를 탭하면 전화 — 내장 연락처 기준, [연락처 파일]로 갱신 가능")); }
+      else sec.appendChild(ciEl("div","ciNote","이 출동대에 해당하는 연락처가 파일에 없습니다"));
+    }else{
+      sec.appendChild(ciEl("div","ciNote","프리셋 형식이 아닌 말은 연락처를 찾을 수 없습니다"));
+    }
+    ciBody.appendChild(sec);
+    chipInfoModal.hidden=false;
+  }
+  document.getElementById("ciClose").addEventListener("click",function(){ chipInfoModal.hidden=true; });
+  chipInfoModal.addEventListener("pointerdown",function(e){ if(e.target===chipInfoModal) chipInfoModal.hidden=true; });
+  document.getElementById("ciEdit").addEventListener("click",function(){
+    chipInfoModal.hidden=true;
+    if(infoChip) openChipEditor(infoChip);
+  });
+  document.getElementById("ciContacts").addEventListener("click",function(){ ciFile.value=""; ciFile.click(); });
+  ciFile.addEventListener("change",function(){
+    var f=ciFile.files&&ciFile.files[0]; if(!f) return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      try{
+        var j=JSON.parse(rd.result);
+        if(!j||(!j.amb&&!j.center)) throw new Error("bad");
+        localStorage.setItem(CONTACTS_K, JSON.stringify(j));
+        if(infoChip) openChipInfo(infoChip);   /* 갱신 표시 */
+      }catch(e){ ciBody.appendChild(ciEl("div","ciNote","연락처 파일을 읽지 못했습니다 — 연락처(앱용).json 파일인지 확인하세요")); }
+    };
+    rd.readAsText(f);
+  });
 
   /* ── 말 편집/추가 모달 ── */
   var chipModal=document.getElementById("chipModal");
