@@ -583,6 +583,9 @@
   }
   #lanePickModal[hidden]{display:none}
   #lanePickGrid .puBtn{border-width:2px}
+  #lanePickGrid{flex:0 0 auto; max-height:22vh; min-height:0}
+  #lanePickGrid:empty{display:none}
+  #lanePickPGrid{flex:1; max-height:30vh}
   .chipCard.presetCard{width:min(640px,94vw); max-height:86vh}  /* .chipCard보다 뒤에 오지 않아 우선순위로 이긴다 */
   .presetSub{margin:-6px 0 0; font-size:12px; color:var(--ink-lo); font-weight:600}
   .stTabs{display:flex; gap:6px; flex-wrap:wrap}
@@ -778,7 +781,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.26</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.27</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -935,8 +938,11 @@
 <div id="lanePickModal" hidden>
   <div class="chipCard presetCard">
     <h3 id="lanePickTitle">배치할 말 선택</h3>
-    <p class="presetSub">미배치(대기) 말을 탭해 선택하면 이 칸으로 바로 배치됩니다</p>
+    <p class="presetSub">탭해 선택하고 "배치"를 누르면 이 칸으로 들어갑니다 — 미배치 말이 없어도 프리셋에서 바로 배치할 수 있습니다</p>
     <div class="puGrid" id="lanePickGrid"></div>
+    <p class="presetSub" id="lanePickPLbl" style="margin-top:2px">프리셋에서 바로 배치 (보드에 없는 출동대)</p>
+    <div class="stTabs" id="lanePickStTabs"></div>
+    <div class="puGrid" id="lanePickPGrid"></div>
     <div class="chipActions">
       <span class="grow"></span>
       <button class="btn" id="lanePickClose">닫기</button>
@@ -1554,7 +1560,11 @@
   var lanePickModal=document.getElementById("lanePickModal");
   var lanePickGrid=document.getElementById("lanePickGrid");
   var lanePickTitle=document.getElementById("lanePickTitle");
-  var lanePickTarget=null, lanePickSel={};
+  var lanePickTarget=null, lanePickSel={};   /* 선택: "t:이름"=미배치 말, "p:이름"=프리셋(값=색) */
+  var lanePickPGrid=document.getElementById("lanePickPGrid");
+  var lanePickStTabs=document.getElementById("lanePickStTabs");
+  var lanePickSt=0;   /* 프리셋 섹션에서 보고 있는 관서 탭 */
+  function lanePickCount(){ document.getElementById("lanePickN").textContent=Object.keys(lanePickSel).length; }
   function openLanePick(body){
     lanePickTarget=body; lanePickSel={};
     lanePickTitle.textContent='"'+body.dataset.lane+'"에 배치할 말 선택';
@@ -1562,37 +1572,74 @@
     lanePickModal.hidden=false;
   }
   function renderLanePick(){
+    /* 1) 미배치(대기) 말 — 있을 때만 표시 */
     lanePickGrid.textContent="";
-    var chips=tray.querySelectorAll(".chip");
-    if(!chips.length){
-      var em=document.createElement("p"); em.className="presetSub";
-      em.textContent="미배치(대기) 말이 없습니다 — 프리셋이나 ＋로 말을 추가하세요";
-      lanePickGrid.appendChild(em); return;
-    }
-    chips.forEach(function(c){
-      var name=c.dataset.name;
+    tray.querySelectorAll(".chip").forEach(function(c){
+      var name=c.dataset.name, key="t:"+name;
       var b=document.createElement("button");
       b.className="puBtn"; b.textContent=name;
       b.style.borderColor=COLOR_HEX[chipColor(c)]||"";
-      b.setAttribute("aria-pressed", lanePickSel[name]?"true":"false");
+      b.setAttribute("aria-pressed", lanePickSel[key]?"true":"false");
       b.addEventListener("click",function(){
-        if(lanePickSel[name]) delete lanePickSel[name]; else lanePickSel[name]=1;
-        b.setAttribute("aria-pressed", lanePickSel[name]?"true":"false");
-        document.getElementById("lanePickN").textContent=Object.keys(lanePickSel).length;
+        if(lanePickSel[key]) delete lanePickSel[key]; else lanePickSel[key]=1;
+        b.setAttribute("aria-pressed", lanePickSel[key]?"true":"false");
+        lanePickCount();
       });
       lanePickGrid.appendChild(b);
     });
-    document.getElementById("lanePickN").textContent="0";
+    /* 2) 프리셋에서 바로 배치 — 전 대 배치 후에도 새 출동대를 여기서 바로 추가 */
+    lanePickStTabs.textContent="";
+    PRESETS.forEach(function(pst,i){
+      var t=document.createElement("button");
+      t.className="stTab";
+      t.setAttribute("aria-pressed", i===lanePickSt?"true":"false");
+      var dot=document.createElement("span"); dot.className="dot";
+      dot.style.background=COLOR_HEX[pst.c];
+      t.appendChild(dot); t.appendChild(document.createTextNode(pst.st));
+      t.addEventListener("click",function(){ lanePickSt=i; renderLanePick(); });
+      lanePickStTabs.appendChild(t);
+    });
+    lanePickPGrid.textContent="";
+    var have=existingNames(), pst=PRESETS[lanePickSt];
+    var free=pst.units.filter(function(n){ return !have[n]; });
+    if(!free.length){
+      var em=document.createElement("p"); em.className="presetSub";
+      em.textContent="이 관서의 출동대는 모두 보드에 있습니다";
+      lanePickPGrid.appendChild(em);
+    }
+    free.forEach(function(name){
+      var key="p:"+name;
+      var b=document.createElement("button");
+      b.className="puBtn"; b.textContent=name;
+      b.setAttribute("aria-pressed", lanePickSel[key]?"true":"false");
+      b.addEventListener("click",function(){
+        if(lanePickSel[key]) delete lanePickSel[key]; else lanePickSel[key]=pst.c;
+        b.setAttribute("aria-pressed", lanePickSel[key]?"true":"false");
+        lanePickCount();
+      });
+      lanePickPGrid.appendChild(b);
+    });
+    lanePickCount();
   }
   document.getElementById("lanePickAdd").addEventListener("click",function(){
     if(!lanePickTarget) return;
     var n=0;
     tray.querySelectorAll(".chip").forEach(function(c){
-      if(lanePickSel[c.dataset.name]){
+      if(lanePickSel["t:"+c.dataset.name]){
         placeInFlow(c, lanePickTarget);
         log(c.dataset.name+": 미배치 → "+lanePickTarget.dataset.lane);
         n++;
       }
+    });
+    var have=existingNames();
+    Object.keys(lanePickSel).forEach(function(key){
+      if(key.slice(0,2)!=="p:") return;
+      var name=key.slice(2);
+      if(have[name]) return;
+      var chip=createChip(name, lanePickSel[key]);
+      placeInFlow(chip, lanePickTarget);
+      log(name+": 프리셋 → "+lanePickTarget.dataset.lane);
+      have[name]=1; n++;
     });
     if(n){ refreshCounts(); scheduleSave(); }
     lanePickModal.hidden=true;
