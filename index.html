@@ -866,7 +866,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.39</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.40</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1181,7 +1181,7 @@
 <div id="presetModal" hidden>
   <div class="chipCard presetCard">
     <h3>출동대 프리셋</h3>
-    <p class="presetSub">관서를 고르고 출동대를 탭해 선택 — 미배치·상태판·현재 지도에 있는 출동대는 제외 (다른 지도 탭에는 같은 출동대를 또 놓을 수 있습니다)</p>
+    <p class="presetSub">관서를 고르고 출동대를 탭해 선택 — 지금 보는 지도 탭에 이미 있는 출동대만 제외됩니다 (지도 탭마다 출동대 구성이 따로)</p>
     <div class="stTabs" id="stTabs"></div>
     <div class="puGrid" id="puGrid"></div>
     <div class="chipActions">
@@ -1489,9 +1489,14 @@
   /* ── 카운터 ── */
   var trayCount=document.getElementById("trayCount");
   function refreshCounts(){
-    trayCount.textContent=tray.querySelectorAll(".chip").length;
+    function vis(list){
+      var n=0;
+      list.forEach(function(c){ if(+(c.dataset.mi||0)===(typeof mi==="number"?mi:0)) n++; });
+      return n;
+    }
+    trayCount.textContent=vis(tray.querySelectorAll(".chip"));
     document.querySelectorAll("#laneList .lane").forEach(function(l){
-      l.querySelector(".laneCount").textContent=l.querySelectorAll(".chip").length;
+      l.querySelector(".laneCount").textContent=vis(l.querySelectorAll(".chip"));
     });
   }
 
@@ -2967,6 +2972,7 @@
     strokes=maps[mi].strokes; view=maps[mi].view; geo=maps[mi].geo; geoO=null;
     updateMapUi();
     applyView();          /* redraw + 말 위치/표시 + 저장 */
+    updateChipVis();      /* 미배치·상태판 말도 탭별 표시 */
     renderMapTabs();
   }
   function renderMapTabs(){
@@ -3018,15 +3024,17 @@
       maps.push({n:"지도 "+(maps.length+1), strokes:[], view:{s:1,tx:0,ty:0}, geo:null});
       log("지도 탭 추가: "+maps[maps.length-1].n);
       switchMap(maps.length-1);
+      openPreset();   /* 새 지도는 출동대 구성이 비어 있으므로 프리셋부터 */
     });
     mapTabsEl.appendChild(add);
   }
   function deleteMap(i){
     if(maps.length<2||!maps[i]) return;
-    /* 이 탭에 배치된 말은 미배치로 회수, 뒤 탭 말들의 소속 번호 당김 */
-    planLayer.querySelectorAll(".chip").forEach(function(c){
+    /* 이 탭 소속 말은 함께 삭제(탭별 독립 구성), 뒤 탭 말들의 소속 번호 당김 */
+    var removed=0;
+    document.querySelectorAll(".chip").forEach(function(c){
       var cm=+(c.dataset.mi||0);
-      if(cm===i){ placeInFlow(c, tray); }
+      if(cm===i){ c.remove(); removed++; }
       else if(cm>i){ c.dataset.mi=cm-1; }
     });
     var name=maps[i].n||("지도 "+(i+1));
@@ -3034,8 +3042,8 @@
     if(mi>=i) mi=Math.max(0, mi-1);
     strokes=maps[mi].strokes; view=maps[mi].view; geo=maps[mi].geo; geoO=null;
     deselectShape();
-    updateMapUi(); applyView(); renderMapTabs(); refreshCounts();
-    log("지도 탭 삭제: "+name+" (배치된 말은 미배치로 회수)");
+    updateMapUi(); applyView(); renderMapTabs(); updateChipVis();
+    log("지도 탭 삭제: "+name+(removed?" (말 "+removed+"개 함께 삭제)":""));
   }
   renderMapTabs();
 
@@ -3116,12 +3124,14 @@
   function createChip(name,color){
     var chip=document.createElement("div");
     chip.className="chip "+color; chip.dataset.name=name;
+    chip.dataset.mi=mi;   /* 말은 만들어진 지도 탭 소속 — 탭마다 출동대 구성이 독립(V2.40) */
     renderChipLabel(chip,name);
     chip.addEventListener("pointerdown",dragStart);
     return chip;
   }
   function addChipFromData(d){
     var chip=createChip(d.n,d.c);
+    chip.dataset.mi=d.m||0;
     if(d.w) chip.dataset.crew=d.w;
     if(d.z==="lane"&&laneList.children[d.i]){
       laneList.children[d.i].querySelector(".laneBody").appendChild(chip);
@@ -3130,6 +3140,7 @@
     }else{
       tray.appendChild(chip);
     }
+    chipApplyVis(chip);
   }
   if(SAVED&&SAVED.chips){ SAVED.chips.forEach(addChipFromData); }
   /* 새 보드는 빈 트레이로 시작 — 프리셋 모달이 자동으로 열림 (아래 참조) */
@@ -3140,9 +3151,18 @@
     return b ? b.dataset.lane : "?";
   }
   function placeInFlow(chip, body){
-    chip.style.left=""; chip.style.top=""; chip.style.transform=""; chip.style.display="";
-    delete chip.dataset.wx; delete chip.dataset.wy; delete chip.dataset.mi;
+    chip.style.left=""; chip.style.top=""; chip.style.transform="";
+    delete chip.dataset.wx; delete chip.dataset.wy;
     body.appendChild(chip);
+    chipApplyVis(chip);
+  }
+  /* 지도 탭별 표시: 활성 탭 소속 말만 (모든 구역 공통) */
+  function chipApplyVis(chip){
+    chip.style.display=(+(chip.dataset.mi||0)===mi)?"":"none";
+  }
+  function updateChipVis(){
+    document.querySelectorAll(".chip").forEach(chipApplyVis);
+    refreshCounts();
   }
   function placeOnPlan(chip, wx, wy, m){
     chip.dataset.wx=wx; chip.dataset.wy=wy;
@@ -3152,7 +3172,7 @@
     positionPlanChip(chip);
   }
   function positionPlanChip(chip){
-    chip.style.display=(+(chip.dataset.mi||0)===mi)?"":"none";   /* 활성 탭의 말만 표시 */
+    chipApplyVis(chip);
     chip.style.left=(chip.dataset.wx*view.s+view.tx-(chip.offsetWidth||CHIP)/2)+"px";
     chip.style.top =(chip.dataset.wy*view.s+view.ty-(chip.offsetHeight||CHIP)/2)+"px";
   }
@@ -3845,11 +3865,10 @@
   var puSel={};         /* 선택된 출동대: 이름 → 색상 */
 
   function existingNames(){
-    /* 중복 판정: 미배치·상태판 + "현재 지도 탭"의 평면도 말만.
-       다른 지도 탭에 배치된 출동대는 제외 — 지도마다 출동대 구성을 따로 꾸릴 수 있다(V2.39) */
+    /* 중복 판정: 현재 지도 탭 소속 말만 — 지도마다 출동대 구성(프리셋)이 완전히 독립(V2.40) */
     var set={};
     document.querySelectorAll(".chip").forEach(function(c){
-      if(c.parentElement===planLayer && +(c.dataset.mi||0)!==mi) return;
+      if(+(c.dataset.mi||0)!==mi) return;
       set[c.dataset.name]=1;
     });
     return set;
@@ -4494,9 +4513,9 @@
       for(var k in extra) d[k]=extra[k];
       chips.push(d);
     }
-    tray.querySelectorAll(".chip").forEach(function(c){ push(c,{z:"tray"}); });
+    tray.querySelectorAll(".chip").forEach(function(c){ push(c,{z:"tray", m:+(c.dataset.mi||0)}); });
     Array.prototype.forEach.call(laneList.children,function(l,i){
-      l.querySelectorAll(".chip").forEach(function(c){ push(c,{z:"lane", i:i}); });
+      l.querySelectorAll(".chip").forEach(function(c){ push(c,{z:"lane", i:i, m:+(c.dataset.mi||0)}); });
     });
     planLayer.querySelectorAll(".chip").forEach(function(c){
       push(c,{z:"plan", x:+c.dataset.wx, y:+c.dataset.wy, m:+(c.dataset.mi||0)});
@@ -4713,7 +4732,7 @@
       });
       renderRdList();
       emState=st.em||null; applyEm();
-      refreshCounts();
+      updateChipVis();
       saveState();   /* 로컬 저장 — syncApplying 중이라 push는 안 됨 */
     }finally{ syncApplying=false; }
   }
