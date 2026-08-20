@@ -203,7 +203,8 @@
   .zoom button:active{background:rgba(255,255,255,.08)}
   .zoom #zoomPct{font-size:11px; font-weight:800; letter-spacing:.03em; color:var(--amber);
     font-variant-numeric:tabular-nums}
-  .zoom #mapBtn,.zoom #satBtn{font-size:12px}
+  .zoom #mapBtn,.zoom #satBtn,.zoom #hydBtn{font-size:12px}
+  .zoom #hydBtn[aria-pressed="true"]{color:#4E86E8}
   .zoom #gpsBtn{font-size:16px}
   .zoom button[aria-pressed="true"]{color:var(--amber)}
   #osmCredit{
@@ -866,7 +867,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.40</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.41</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -896,6 +897,7 @@
       <button id="gpsBtn" aria-label="현 위치로 이동" hidden>◎</button>
       <button id="searchBtn" aria-label="주소 검색" hidden>🔍</button>
       <button id="satBtn" aria-label="위성사진 전환" aria-pressed="false" hidden>위성</button>
+      <button id="hydBtn" aria-label="소방용수 표시" aria-pressed="false" hidden title="울산 소방용수시설(소화전·저수조 등)을 지도에 표시">용수</button>
     </div>
     <div id="osmCredit" hidden>© OpenStreetMap contributors</div>
 
@@ -1876,6 +1878,65 @@
   var mapBtn=document.getElementById("mapBtn");
   var gpsBtn=document.getElementById("gpsBtn");
   var searchBtn=document.getElementById("searchBtn");
+  /* ── 소방용수시설 오버레이 (소방청 울산 공공데이터, yongsu.json — 소화전·저수조 등 3,151개소) ── */
+  var hydBtn=document.getElementById("hydBtn");
+  var HYD_ON=localStorage.getItem("fireboard-hyd")==="1";   /* 기기별 설정 */
+  var hydData=null, hydLoading=false;
+  var HYD_STYLE=[
+    {c:"#1D4ED8", f:1},   /* 0 지상식 소화전: 파랑 채움 */
+    {c:"#1D4ED8", f:0},   /* 1 지하식 소화전: 파랑 테두리 */
+    {c:"#0E7490", f:1},   /* 2 저수조: 청록 */
+    {c:"#7C3AED", f:1},   /* 3 급수탑: 보라 */
+    {c:"#64748B", f:1}    /* 4 기타(관정·저수지 등): 회색 */
+  ];
+  function hydEnsure(){
+    if(hydData||hydLoading) return;
+    hydLoading=true;
+    fetch("yongsu.json").then(function(r){ return r.json(); }).then(function(j){
+      hydData=j; hydLoading=false;
+      /* 월드 좌표 캐시는 기준점(geo)에 따라 달라지므로 그릴 때 계산 */
+      redraw();
+    }).catch(function(){ hydLoading=false; });
+  }
+  function drawHydrants(cw,ch){
+    if(!hydData){ hydEnsure(); return; }
+    var O=geoOrg(); if(!O) return;
+    var a=s2w(0,0), b=s2w(cw,ch);
+    var pad=20/view.s;
+    var x0=a[0]-pad, y0=a[1]-pad, x1=b[0]+pad, y1=b[1]+pad;
+    /* 축소 배율에선 점, 확대하면 소화전 형상 */
+    var k=1/view.s;
+    var detailed=view.s>=0.9;
+    var r=(detailed?7:4.5)*k;
+    var lw=1.8*k;
+    var p=hydData.p;
+    for(var i=0;i<p.length;i++){
+      var m=merc(p[i][0], p[i][1]);
+      var wx=m.x-O.x, wy=m.y-O.y;
+      if(wx<x0||wx>x1||wy<y0||wy>y1) continue;
+      var st=HYD_STYLE[p[i][2]]||HYD_STYLE[4];
+      ctx.beginPath(); ctx.arc(wx,wy,r,0,7);
+      if(st.f){ ctx.fillStyle=st.c; ctx.fill(); ctx.lineWidth=lw; ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.stroke(); }
+      else{ ctx.fillStyle="#fff"; ctx.fill(); ctx.lineWidth=lw*1.4; ctx.strokeStyle=st.c; ctx.stroke(); }
+      if(detailed){
+        /* 소화전 심볼: H (hydrant) — 작고 단순하게 */
+        ctx.fillStyle=st.f?"#fff":st.c;
+        ctx.font="800 "+(8.5*k)+"px sans-serif";
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText(p[i][2]===2?"저":(p[i][2]===3?"급":"H"), wx, wy+0.5*k);
+      }
+    }
+  }
+  hydBtn.addEventListener("click",function(){
+    HYD_ON=!HYD_ON;
+    try{ localStorage.setItem("fireboard-hyd", HYD_ON?"1":"0"); }catch(e){}
+    hydBtn.setAttribute("aria-pressed", HYD_ON?"true":"false");
+    if(HYD_ON){ hydEnsure(); log("소방용수 표시 켬 (울산 3,151개소)"); }
+    else log("소방용수 표시 끔");
+    redraw();
+  });
+  hydBtn.setAttribute("aria-pressed", HYD_ON?"true":"false");
+
   var satBtn=document.getElementById("satBtn");
   var osmCredit=document.getElementById("osmCredit");
   satBtn.addEventListener("click",function(){
@@ -1890,6 +1951,7 @@
     gpsBtn.hidden=!on;
     searchBtn.hidden=!on;
     satBtn.hidden=!on;
+    hydBtn.hidden=!on;
     satBtn.setAttribute("aria-pressed", SAT?"true":"false");
     osmCredit.hidden=!on;
     osmCredit.textContent=SAT
@@ -2226,6 +2288,7 @@
     if(geo&&geo.on){
       /* 실제 지도 배경 */
       drawTiles(cw,ch);
+      if(HYD_ON) drawHydrants(cw,ch);
     }else{
       /* 점 격자 (이동·확대 시 위치 감각용) */
       var a=s2w(0,0), b=s2w(cw,ch), G=60;

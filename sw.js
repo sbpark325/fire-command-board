@@ -1,10 +1,11 @@
 /* 현장지휘 보드 — 오프라인 캐시 서비스워커
    배포할 때마다 CACHE 버전을 올리면 이전 캐시가 교체된다. */
-var CACHE = "fireboard-v2.40";
+var CACHE = "fireboard-v2.41";
 var ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
+  "./yongsu.json",
   "./icon-192.png",
   "./icon-512.png"
 ];
