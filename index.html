@@ -827,7 +827,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.31</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.32</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -2471,7 +2471,10 @@
     var box=shapeXLayer.querySelector(".selBox");
     if(box){ box.style.left=x0+"px"; box.style.top=y0+"px"; box.style.width=(x1-x0)+"px"; box.style.height=(y1-y0)+"px"; }
     var xb=shapeXLayer.querySelector(".sx"); if(xb){ xb.style.left=x1+"px"; xb.style.top=y0+"px"; }
-    var h=shapeXLayer.querySelector(".sh");  if(h){ h.style.left=x1+"px"; h.style.top=y1+"px"; }
+    shapeXLayer.querySelectorAll(".sh").forEach(function(h){
+      if(h._place){ var pt=h._place(); h.style.left=(pt[0]*view.s+view.tx)+"px"; h.style.top=(pt[1]*view.s+view.ty)+"px"; }
+      else{ h.style.left=x1+"px"; h.style.top=y1+"px"; }
+    });
     var rr=shapeXLayer.querySelector(".sr"); if(rr){ rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px"; }
   }
   function rebuildShapeX(){
@@ -2515,25 +2518,32 @@
     xb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
     xb.addEventListener("click",function(e){ e.stopPropagation(); deleteShape(s); });
     shapeXLayer.appendChild(xb);
-    if(s.type==="rect"||s.type==="building"||s.type==="arrow"||(s.type==="img"&&s.b)){
+    function rotP(pt,C,rot){
+      if(!rot) return [pt[0],pt[1]];
+      var dx=pt[0]-C[0], dy=pt[1]-C[1], c=Math.cos(rot), si=Math.sin(rot);
+      return [C[0]+dx*c-dy*si, C[1]+dx*si+dy*c];
+    }
+    function w2sPt(pt){ return [pt[0]*view.s+view.tx, pt[1]*view.s+view.ty]; }
+    function rectCorners(){ /* 회전 반영한 월드 꼭짓점 tl,tr,br,bl */
+      var rx0=Math.min(s.a[0],s.b[0]), ry0=Math.min(s.a[1],s.b[1]);
+      var rx1=Math.max(s.a[0],s.b[0]), ry1=Math.max(s.a[1],s.b[1]);
+      var C=[(rx0+rx1)/2,(ry0+ry1)/2], rot=s.rot||0;
+      return [[rx0,ry0],[rx1,ry0],[rx1,ry1],[rx0,ry1]].map(function(pt){ return rotP(pt,C,rot); });
+    }
+    function mkHandle(place, onMove){
+      /* place(): 월드 좌표 반환 — layoutShapeX에서도 재호출해 위치 갱신 */
       var h=document.createElement("button");
       h.className="sh"; h.textContent="⤡"; h.setAttribute("aria-label","도형 크기 조절");
-      h.style.left=x1+"px"; h.style.top=y1+"px";
+      h._place=place;
+      var sp=w2sPt(place());
+      h.style.left=sp[0]+"px"; h.style.top=sp[1]+"px";
       h.addEventListener("pointerdown",function(e){
         e.stopPropagation(); e.preventDefault();
         try{ h.setPointerCapture(e.pointerId); }catch(err){}
-        var rc0=(function(){ var bb0={x0:Math.min(s.a?s.a[0]:s.at[0], s.b[0]), y0:Math.min(s.a?s.a[1]:s.at[1], s.b[1]),
-                                        x1:Math.max(s.a?s.a[0]:s.at[0], s.b[0]), y1:Math.max(s.a?s.a[1]:s.at[1], s.b[1])};
-                             return [(bb0.x0+bb0.x1)/2,(bb0.y0+bb0.y1)/2]; })();
+        var ctxDrag=onMove(e)||null;   /* 드래그 시작 스냅샷 */
         function mv(ev){
           var p=localXY(ev), w=s2w(p[0],p[1]);
-          var rot=s.rot||0;
-          if(rot){ /* 회전된 도형: 포인터를 로컬(비회전) 좌표로 되돌려 크기 계산 */
-            var dx=w[0]-rc0[0], dy=w[1]-rc0[1], c=Math.cos(-rot), si=Math.sin(-rot);
-            w=[rc0[0]+dx*c-dy*si, rc0[1]+dx*si+dy*c];
-          }
-          if(s.type==="img"){ s.w=Math.max(40, w[0]-s.at[0]); }
-          else s.b=w;
+          ctxDrag&&ctxDrag(w);
           redraw(); layoutShapeX();
         }
         function up(){
@@ -2547,6 +2557,44 @@
         h.addEventListener("pointercancel",up);
       });
       shapeXLayer.appendChild(h);
+      return h;
+    }
+    if(s.type==="rect"||s.type==="building"){
+      /* 꼭짓점 4개: 잡은 모서리를 끌면 맞은편 모서리는 고정 — 가로·세로 비율 자유 조절 (회전 상태 포함) */
+      [0,1,2,3].forEach(function(ci){
+        mkHandle(function(){ return rectCorners()[ci]; }, function(){
+          var opp=rectCorners()[(ci+2)%4];   /* 맞은편 꼭짓점(월드) 고정 */
+          var rot=s.rot||0;
+          return function(w){
+            var C=[(opp[0]+w[0])/2,(opp[1]+w[1])/2];
+            var dx=w[0]-C[0], dy=w[1]-C[1], c=Math.cos(-rot), si=Math.sin(-rot);
+            var vx=dx*c-dy*si, vy=dx*si+dy*c;
+            var mn=4/view.s;
+            if(Math.abs(vx)<mn) vx=(vx<0?-1:1)*mn;
+            if(Math.abs(vy)<mn) vy=(vy<0?-1:1)*mn;
+            s.a=[C[0]-vx, C[1]-vy]; s.b=[C[0]+vx, C[1]+vy];
+          };
+        });
+      });
+    }else if(s.type==="arrow"){
+      /* 화살표: 양 끝점 각각 조절 */
+      mkHandle(function(){ return [s.a[0],s.a[1]]; }, function(){ return function(w){ s.a=w; }; });
+      mkHandle(function(){ return [s.b[0],s.b[1]]; }, function(){ return function(w){ s.b=w; }; });
+    }else if(s.type==="img"&&s.b){
+      /* 사진: 우하단 한 개(비율 고정), 회전 반영 */
+      mkHandle(function(){
+        var C=[(s.at[0]+s.b[0])/2,(s.at[1]+s.b[1])/2];
+        return rotP([s.b[0],s.b[1]], C, s.rot||0);
+      }, function(){
+        var C0=[(s.at[0]+s.b[0])/2,(s.at[1]+s.b[1])/2], rot=s.rot||0;
+        return function(w){
+          if(rot){
+            var dx=w[0]-C0[0], dy=w[1]-C0[1], c=Math.cos(-rot), si=Math.sin(-rot);
+            w=[C0[0]+dx*c-dy*si, C0[1]+dx*si+dy*c];
+          }
+          s.w=Math.max(40, w[0]-s.at[0]);
+        };
+      });
     }
     if(s.type==="stamp"&&s.grp){
       /* 방면 그룹 회전 핸들: 어느 하나를 선택해도 ↻로 네 방면이 그룹 중심 기준 함께 회전.
