@@ -205,6 +205,19 @@
     font-variant-numeric:tabular-nums}
   .zoom #mapBtn,.zoom #satBtn,.zoom #hydBtn{font-size:12px}
   .zoom #hydBtn[aria-pressed="true"]{color:#4E86E8}
+  .zoom #mapClearBtn{font-size:11px; color:var(--ink-lo)}
+  .zoom #mapClearBtn.arm{color:#FF7A64; font-weight:800}
+  /* ── 용수 범례 ── */
+  #hydLegend{
+    position:absolute; left:12px; bottom:34px; z-index:28;
+    display:flex; flex-direction:column; gap:5px;
+    background:rgba(24,26,29,.88); border:1px solid var(--edge); border-radius:10px;
+    padding:8px 11px; backdrop-filter:blur(4px); pointer-events:none;
+  }
+  #hydLegend[hidden]{display:none}
+  #hydLegend .hlT{font-size:10px; font-weight:800; letter-spacing:.12em; color:var(--ink-lo); margin-bottom:1px}
+  #hydLegend .hlR{display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:700; color:var(--ink-hi)}
+  #hydLegend svg{width:16px; height:16px; flex:0 0 auto}
   .zoom #gpsBtn{font-size:16px}
   .zoom button[aria-pressed="true"]{color:var(--amber)}
   #osmCredit{
@@ -867,7 +880,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.42</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.43</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -898,8 +911,17 @@
       <button id="searchBtn" aria-label="주소 검색" hidden>🔍</button>
       <button id="satBtn" aria-label="위성사진 전환" aria-pressed="false" hidden>위성</button>
       <button id="hydBtn" aria-label="소방용수 표시" aria-pressed="false" hidden title="울산 소방용수시설(소화전·저수조 등)을 지도에 표시">용수</button>
+      <button id="mapClearBtn" aria-label="지도 배경 지우기" hidden title="이 지도 탭의 지도 배경과 위치 기준점을 지웁니다 (그림·말은 유지)">지도<br>지우기</button>
     </div>
     <div id="osmCredit" hidden>© OpenStreetMap contributors</div>
+    <div id="hydLegend" hidden>
+      <div class="hlT">소방용수</div>
+      <div class="hlR"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#1D4ED8" stroke="#fff" stroke-width="1.4"/><g fill="#fff"><path d="M7.3 6.8a2.7 2.7 0 0 1 5.4 0z"/><rect x="6.1" y="6.5" width="7.8" height="1.2"/><rect x="7.8" y="7.6" width="4.4" height="6"/><rect x="5.5" y="9" width="1.8" height="1.9"/><rect x="12.7" y="9" width="1.8" height="1.9"/><rect x="6.7" y="13.8" width="6.6" height="1.4"/><circle cx="10" cy="4.4" r=".95"/></g></svg>지상식 소화전</div>
+      <div class="hlR"><svg viewBox="0 0 20 20"><rect x="1" y="1" width="18" height="18" rx="4" fill="#1D4ED8" stroke="#fff" stroke-width="1.4"/><g fill="#fff"><path d="M7.3 6.8a2.7 2.7 0 0 1 5.4 0z"/><rect x="6.1" y="6.5" width="7.8" height="1.2"/><rect x="7.8" y="7.6" width="4.4" height="6"/><rect x="5.5" y="9" width="1.8" height="1.9"/><rect x="12.7" y="9" width="1.8" height="1.9"/><rect x="6.7" y="13.8" width="6.6" height="1.4"/><circle cx="10" cy="4.4" r=".95"/></g></svg>지하식 소화전</div>
+      <div class="hlR"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#0E7490" stroke="#fff" stroke-width="1.4"/><g stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round"><path d="M4.5 8.4Q7.25 5.2 10 8.4T15.5 8.4"/><path d="M4.5 12.2Q7.25 9 10 12.2T15.5 12.2"/></g></svg>저수조</div>
+      <div class="hlR"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#7C3AED" stroke="#fff" stroke-width="1.4"/><g fill="#fff"><rect x="8.8" y="9" width="2.4" height="6.5"/><rect x="5.5" y="4" width="9" height="5" rx="2"/><rect x="5.8" y="15" width="8.4" height="1.3"/></g></svg>급수탑</div>
+      <div class="hlR"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#64748B" stroke="#fff" stroke-width="1.4"/><g fill="#fff"><path d="M7.3 6.8a2.7 2.7 0 0 1 5.4 0z"/><rect x="6.1" y="6.5" width="7.8" height="1.2"/><rect x="7.8" y="7.6" width="4.4" height="6"/><rect x="5.5" y="9" width="1.8" height="1.9"/><rect x="12.7" y="9" width="1.8" height="1.9"/><rect x="6.7" y="13.8" width="6.6" height="1.4"/></g></svg>기타(관정·저수지)</div>
+    </div>
 
     <div class="tools" role="toolbar" aria-label="그리기 도구">
       <button data-tool="pan" aria-pressed="false">이동</button>
@@ -1961,15 +1983,35 @@
       ctx.restore();
     }
   }
+  var hydLegend=document.getElementById("hydLegend");
+  function hydLegendUpdate(){ hydLegend.hidden=!(HYD_ON && geo && geo.on); }
   hydBtn.addEventListener("click",function(){
     HYD_ON=!HYD_ON;
     try{ localStorage.setItem("fireboard-hyd", HYD_ON?"1":"0"); }catch(e){}
     hydBtn.setAttribute("aria-pressed", HYD_ON?"true":"false");
     if(HYD_ON){ hydEnsure(); log("소방용수 표시 켬 (울산 3,151개소)"); }
     else log("소방용수 표시 끔");
+    hydLegendUpdate();
     redraw();
   });
   hydBtn.setAttribute("aria-pressed", HYD_ON?"true":"false");
+
+  /* ── 지도 지우기: 이 지도 탭의 배경·기준점 제거 (그림·말 유지) — 두 번 눌러 확정 ── */
+  var mapClearBtn=document.getElementById("mapClearBtn"), mapClearTimer=null;
+  mapClearBtn.addEventListener("click",function(){
+    if(mapClearBtn.classList.contains("arm")){
+      clearTimeout(mapClearTimer);
+      mapClearBtn.classList.remove("arm"); mapClearBtn.innerHTML="지도<br>지우기";
+      geo=null; geoO=null;
+      log("지도 배경 지움: "+((maps[mi]&&maps[mi].n)||"지도")+" (그림·말은 유지)");
+      updateMapUi(); scheduleSave();
+    }else{
+      mapClearBtn.classList.add("arm"); mapClearBtn.innerHTML="한 번<br>더";
+      mapClearTimer=setTimeout(function(){
+        mapClearBtn.classList.remove("arm"); mapClearBtn.innerHTML="지도<br>지우기";
+      },2500);
+    }
+  });
 
   var satBtn=document.getElementById("satBtn");
   var osmCredit=document.getElementById("osmCredit");
@@ -1986,6 +2028,8 @@
     searchBtn.hidden=!on;
     satBtn.hidden=!on;
     hydBtn.hidden=!on;
+    mapClearBtn.hidden=!geo;   /* 기준점이 있으면(꺼져 있어도) 지울 수 있게 */
+    hydLegendUpdate();
     satBtn.setAttribute("aria-pressed", SAT?"true":"false");
     osmCredit.hidden=!on;
     osmCredit.textContent=SAT
