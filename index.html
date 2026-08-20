@@ -837,7 +837,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.34</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.35</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -3958,7 +3958,13 @@
     return x;
   }
   /* Gemini generateContent (Google AI Studio 키, 브라우저 직접 호출).
-     지정 모델이 없으면(404) 목록에서 최신 flash 모델을 찾아 1회 재시도 + 기기에 저장 */
+     404(모델 폐기)·503(모델 혼잡)이면 대체 모델 체인으로 자동 재시도, 성공한 모델을 기기에 저장 */
+  var AI_GEM_FALLBACKS=["gemini-3.6-flash","gemini-flash-latest","gemini-3.5-flash"];
+  function aiGemNext(tried){
+    for(var i=0;i<AI_GEM_FALLBACKS.length;i++)
+      if(tried.indexOf(AI_GEM_FALLBACKS[i])<0) return AI_GEM_FALLBACKS[i];
+    return null;
+  }
   function aiCallGemini(b64, model, retried){
     var body={
       systemInstruction:{parts:[{text:AI_SYSTEM}]},
@@ -3974,23 +3980,24 @@
         return r.json().catch(function(){ return {}; }).then(function(j){
           if(!r.ok){
             var msg=(j&&j.error&&j.error.message)||("HTTP "+r.status);
-            if(r.status===404 && !retried){
-              /* 폐기 안내문에 권장 모델이 있으면 그걸, 없으면 목록에서 최신 flash */
-              var rec=(msg.match(/models\/gemini-[\w.-]+/g)||[]).map(function(n){ return n.slice(7); })
-                        .filter(function(n){ return n!==model; }).pop();
-              return (rec?Promise.resolve(rec):aiGeminiPickModel()).then(function(m){
-                if(m && m!==model){
-                  try{ localStorage.setItem(AI_MODEL_KS.gemini,m); }catch(e){}
-                  return aiCallGemini(b64,m,true);
-                }
-                throw new Error("모델 '"+model+"'을(를) 찾을 수 없습니다 — API 설정에서 모델명을 확인하세요");
-              });
+            var tried=Array.isArray(retried)?retried:[]; tried=tried.concat([model]);
+            if((r.status===404||r.status===503) && tried.length<=3){
+              /* 404: 폐기 안내문의 권장 모델 우선. 503: 혼잡 — 안정 모델 체인으로 교체 */
+              var rec=null;
+              if(r.status===404)
+                rec=(msg.match(/models\/gemini-[\w.-]+/g)||[]).map(function(n){ return n.slice(7); })
+                      .filter(function(n){ return tried.indexOf(n)<0; }).pop();
+              var next=rec||aiGemNext(tried);
+              if(next) return aiCallGemini(b64,next,tried);
             }
             if(/API key|API_KEY/i.test(msg)||r.status===401||r.status===403) msg="API 키가 올바르지 않거나 권한이 없습니다 (API 설정에서 확인)";
+            else if(r.status===404) msg="모델 '"+model+"'을(를) 찾을 수 없습니다 — API 설정에서 모델명을 비우거나 확인하세요";
             else if(r.status===429) msg="무료 한도 초과 — 잠시 후(1분쯤) 다시 시도하세요";
-            else if(r.status===503) msg="API 서버 혼잡 — 잠시 후 다시 시도하세요";
+            else if(r.status===503) msg="API 서버 혼잡(모델 "+model+") — 잠시 후 다시 시도하거나 API 설정에서 모델을 바꿔 보세요";
             throw new Error(msg);
           }
+          /* 성공: 저장된 모델과 다르면(폴백으로 성공) 이 모델을 기기에 저장 — 다음부터 바로 사용 */
+          if(model!==aiModel("gemini")){ try{ localStorage.setItem(AI_MODEL_KS.gemini,model); }catch(e){} }
           var cand=(j.candidates||[])[0];
           if(!cand){
             if(j.promptFeedback&&j.promptFeedback.blockReason) throw new Error("모델이 이 이미지 처리를 거부했습니다 — 다른 사진으로 다시 시도하세요");
@@ -4010,6 +4017,7 @@
         var ms=(j.models||[]).filter(function(m){ return (m.supportedGenerationMethods||[]).indexOf("generateContent")>=0; })
           .map(function(m){ return (m.name||"").replace(/^models\//,""); });
         function ver(n){ var mm=n.match(/gemini-(\d+(?:\.\d+)?)/); return mm?parseFloat(mm[1]):0; }
+        if(ms.indexOf("gemini-flash-latest")>=0) return "gemini-flash-latest";
         var flash=ms.filter(function(n){ return /^gemini-\d+(?:\.\d+)?-flash$/.test(n); });
         flash.sort(function(a,b){ return ver(b)-ver(a); });
         if(flash.length) return flash[0];
