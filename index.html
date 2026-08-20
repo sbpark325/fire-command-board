@@ -827,7 +827,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.30</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.31</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -2588,6 +2588,44 @@
         gr.addEventListener("pointercancel",up);
       });
       shapeXLayer.appendChild(gr);
+      /* 반경 핸들(⤡): 그룹 중심에서 멀어지게/가깝게 끌면 네 방면 간격이 함께 조절 (각도 유지) */
+      var gh=document.createElement("button");
+      gh.className="sh"; gh.textContent="⤡"; gh.setAttribute("aria-label","방면 간격(반경) 조절");
+      gh.style.left=x1+"px"; gh.style.top=y1+"px";
+      gh.addEventListener("pointerdown",function(e){
+        e.stopPropagation(); e.preventDefault();
+        try{ gh.setPointerCapture(e.pointerId); }catch(err){}
+        var members=strokes.filter(function(k){ return k.type==="stamp"&&k.grp===s.grp; });
+        if(!members.length) return;
+        var cx=0, cy=0;
+        members.forEach(function(m){ cx+=m.at[0]; cy+=m.at[1]; });
+        cx/=members.length; cy/=members.length;
+        var snap0=members.map(function(m){ return [m.at[0]-cx, m.at[1]-cy]; });
+        var rm0=0; snap0.forEach(function(o){ rm0+=Math.hypot(o[0],o[1]); }); rm0/=members.length;
+        var p0=localXY(e), w0=s2w(p0[0],p0[1]);
+        var d0=Math.max(1e-6, Math.hypot(w0[0]-cx, w0[1]-cy));
+        function mv(ev){
+          var p=localXY(ev), w=s2w(p[0],p[1]);
+          var f=Math.hypot(w[0]-cx, w[1]-cy)/d0;
+          /* 화면상 최소 34px·최대 1200px 반경으로 제한 */
+          if(rm0>1e-6){
+            var minF=(34/view.s)/rm0, maxF=(1200/view.s)/rm0;
+            f=Math.min(maxF, Math.max(minF, f));
+          }
+          members.forEach(function(m,i){ m.at=[cx+snap0[i][0]*f, cy+snap0[i][1]*f]; });
+          redraw(); layoutShapeX();
+        }
+        function up(){
+          gh.removeEventListener("pointermove",mv);
+          gh.removeEventListener("pointerup",up);
+          gh.removeEventListener("pointercancel",up);
+          rebuildShapeX(); scheduleSave();
+        }
+        gh.addEventListener("pointermove",mv);
+        gh.addEventListener("pointerup",up);
+        gh.addEventListener("pointercancel",up);
+      });
+      shapeXLayer.appendChild(gh);
     }
     if(s.type==="rect"||s.type==="building"||(s.type==="img"&&s.b)){
       /* 회전 핸들: 선택 상자 위쪽 중앙, 드래그로 중심 기준 회전 (45° 근처는 스냅) */
