@@ -827,7 +827,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.29</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.30</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -887,7 +887,8 @@
       <button data-shape="rect" aria-pressed="false">▭ 사각형</button>
       <button data-shape="building" aria-pressed="false">▤ 건물</button>
       <span class="menuSep"></span>
-      <button data-shape="st-A" aria-pressed="false" title="탭한 곳을 중심으로 Ⓐ~Ⓓ가 시계방향으로 한 번에 배치됩니다">Ⓐ~Ⓓ방면</button>
+      <button data-shape="st-A" aria-pressed="false" title="탭한 곳을 중심으로 Ⓐ~Ⓓ가 시계방향으로 한 번에 배치됩니다 — 하나를 선택해 ↻를 끌면 네 개가 함께 회전">Ⓐ~Ⓓ방면</button>
+      <button data-shape="st-A1" aria-pressed="false">Ⓐ방면</button>
       <button data-shape="st-B" aria-pressed="false">Ⓑ방면</button>
       <button data-shape="st-C" aria-pressed="false">Ⓒ방면</button>
       <button data-shape="st-D" aria-pressed="false">Ⓓ방면</button>
@@ -2284,12 +2285,16 @@
         /* 방면 Ⓐ: 탭한 곳을 건물 중심으로 보고 Ⓐ(위)→Ⓑ(오른쪽)→Ⓒ(아래)→Ⓓ(왼쪽) 시계방향 자동 배치.
            떼기 전 드래그로 네 개가 함께 이동, 놓은 뒤엔 각각 선택해 개별 조정 */
         var R=84/view.s;
+        var gid="g"+Date.now().toString(36)+Math.floor(Math.random()*1e4);
         curGroup=[["A",0,-R],["B",R,0],["C",0,R],["D",-R,0]].map(function(q){
-          var st={type:"stamp", sym:q[0], at:[w[0]+q[1], w[1]+q[2]]};
+          var st={type:"stamp", sym:q[0], at:[w[0]+q[1], w[1]+q[2]], grp:gid};
           strokes.push(st);
           return {s:st, dx:q[1], dy:q[2]};
         });
         cur=curGroup[0].s;
+      }else if(tool==="st-A1"){
+        /* 방면 Ⓐ 하나만 배치 */
+        cur={type:"stamp", sym:"A", at:w};
       }else if(tool.indexOf("st-")===0){
         /* 스탬프: 누른 자리에 배치, 떼기 전까지 드래그로 위치 미세조정 */
         cur={type:"stamp", sym:tool.slice(3), at:w};
@@ -2362,7 +2367,7 @@
       var finished=cur;
       if(cur){
         if(curGroup) log("평면도 표기: 방면 Ⓐ~Ⓓ (시계방향 자동)");
-        else if(cur.type==="stamp") log("평면도 표기: "+SHAPE_NAMES["st-"+cur.sym]);
+        else if(cur.type==="stamp") log("평면도 표기: "+(cur.sym==="A"?"A방면":SHAPE_NAMES["st-"+cur.sym]));
         scheduleSave();
       }
       cur=null; curGroup=null;
@@ -2543,6 +2548,47 @@
       });
       shapeXLayer.appendChild(h);
     }
+    if(s.type==="stamp"&&s.grp){
+      /* 방면 그룹 회전 핸들: 어느 하나를 선택해도 ↻로 네 방면이 그룹 중심 기준 함께 회전.
+         이동·삭제는 각자 따로 (개별 수정 유지) */
+      var gr=document.createElement("button");
+      gr.className="sr"; gr.textContent="↻"; gr.setAttribute("aria-label","방면 전체 회전");
+      gr.style.left=((x0+x1)/2)+"px"; gr.style.top=(y0-26)+"px";
+      gr.addEventListener("pointerdown",function(e){
+        e.stopPropagation(); e.preventDefault();
+        try{ gr.setPointerCapture(e.pointerId); }catch(err){}
+        var members=strokes.filter(function(k){ return k.type==="stamp"&&k.grp===s.grp; });
+        if(!members.length) return;
+        var cx=0, cy=0;
+        members.forEach(function(m){ cx+=m.at[0]; cy+=m.at[1]; });
+        cx/=members.length; cy/=members.length;
+        var snap0=members.map(function(m){ return [m.at[0]-cx, m.at[1]-cy]; });
+        var p0=localXY(e), w0=s2w(p0[0],p0[1]);
+        var a0=Math.atan2(w0[1]-cy, w0[0]-cx);
+        function mv(ev){
+          var p=localXY(ev), w=s2w(p[0],p[1]);
+          var da=Math.atan2(w[1]-cy, w[0]-cx)-a0;
+          /* 45° 배수 근처(±5°)는 스냅 */
+          var snapA=Math.round(da/(Math.PI/4))*(Math.PI/4);
+          if(Math.abs(da-snapA)<0.087) da=snapA;
+          var c=Math.cos(da), si=Math.sin(da);
+          members.forEach(function(m,i){
+            m.at=[cx+snap0[i][0]*c-snap0[i][1]*si, cy+snap0[i][0]*si+snap0[i][1]*c];
+          });
+          redraw(); layoutShapeX();
+        }
+        function up(){
+          gr.removeEventListener("pointermove",mv);
+          gr.removeEventListener("pointerup",up);
+          gr.removeEventListener("pointercancel",up);
+          rebuildShapeX(); scheduleSave();
+        }
+        gr.addEventListener("pointermove",mv);
+        gr.addEventListener("pointerup",up);
+        gr.addEventListener("pointercancel",up);
+      });
+      shapeXLayer.appendChild(gr);
+    }
     if(s.type==="rect"||s.type==="building"||(s.type==="img"&&s.b)){
       /* 회전 핸들: 선택 상자 위쪽 중앙, 드래그로 중심 기준 회전 (45° 근처는 스냅) */
       var rr=document.createElement("button");
@@ -2611,7 +2657,7 @@
   var shapeBtn=document.getElementById("shapeBtn");
   var shapeMenu=document.getElementById("shapeMenu");
   var SHAPE_NAMES={arrow:"화살표", rect:"사각형", building:"건물",
-    "st-A":"방면 Ⓐ~Ⓓ","st-B":"B방면","st-C":"C방면","st-D":"D방면",
+    "st-A":"방면 Ⓐ~Ⓓ","st-A1":"A방면","st-B":"B방면","st-C":"C방면","st-D":"D방면",
     "st-RIT":"RIT","st-wait":"자원대기소","st-med":"임시의료소","st-hyd":"소화전","st-crew":"대원"};
   function closeShapeMenu(){
     shapeMenu.hidden=true; shapeBtn.setAttribute("aria-expanded","false");
