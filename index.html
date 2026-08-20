@@ -124,6 +124,16 @@
     box-shadow:0 1px 3px rgba(0,0,0,.3);
   }
   #shapeXLayer .sx:active{background:var(--red); border-color:var(--red); color:#fff}
+  #shapeXLayer .sr{
+    position:absolute; transform:translate(-50%,-50%);
+    width:22px; height:22px; padding:0; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; border:1px solid rgba(0,0,0,.35);
+    background:#fff; color:#22262A; font-size:13px; line-height:1; font-weight:800;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  #shapeXLayer .sr:active{background:var(--amber); border-color:var(--amber)}
+  #shapeXLayer .sr::before{content:""; position:absolute; inset:-12px}
   #shapeXLayer .selBox{
     position:absolute; pointer-events:auto; touch-action:none; cursor:move;
     border:1.5px dashed var(--amber); border-radius:4px;
@@ -817,7 +827,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.28</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.29</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -877,7 +887,7 @@
       <button data-shape="rect" aria-pressed="false">▭ 사각형</button>
       <button data-shape="building" aria-pressed="false">▤ 건물</button>
       <span class="menuSep"></span>
-      <button data-shape="st-A" aria-pressed="false">Ⓐ방면</button>
+      <button data-shape="st-A" aria-pressed="false" title="탭한 곳을 중심으로 Ⓐ~Ⓓ가 시계방향으로 한 번에 배치됩니다">Ⓐ~Ⓓ방면</button>
       <button data-shape="st-B" aria-pressed="false">Ⓑ방면</button>
       <button data-shape="st-C" aria-pressed="false">Ⓒ방면</button>
       <button data-shape="st-D" aria-pressed="false">Ⓓ방면</button>
@@ -885,6 +895,7 @@
       <button data-shape="st-wait" aria-pressed="false">자원대기소</button>
       <button data-shape="st-med" aria-pressed="false">임시의료소</button>
       <button data-shape="st-hyd" aria-pressed="false">소화전</button>
+      <button data-shape="st-crew" aria-pressed="false">대원</button>
     </div>
     <div class="hint">두 손가락(터치)·휠/오른쪽 드래그(마우스) 화면 이동 · 말 탭=편집</div>
     <div id="emBanner" hidden>
@@ -1924,6 +1935,7 @@
 
   /* ── 캔버스: 펜/도형 그리기 + 두 손가락 팬/줌 ── */
   var strokes=(SAVED&&SAVED.strokes)||[], cur=null, tool="pen";
+  var curGroup=null;   /* 방면 Ⓐ~Ⓓ 묶음 배치 중 */
   /* 그리기 옵션: 펜 색상 6종·굵기 3단계, 지우개 크기 3단계 */
   var PEN_COLORS=["#22262A","#E0432D","#1D4ED8","#1E7233","#D97F1E","#7A4EC5","#FFFFFF"];
   var PEN_WIDTHS=[2,3.5,6];
@@ -1944,9 +1956,10 @@
     A:{c:"#E0432D", t:"A", letter:1}, B:{c:"#E0432D", t:"B", letter:1},
     C:{c:"#E0432D", t:"C", letter:1}, D:{c:"#E0432D", t:"D", letter:1},
     RIT:{c:"#C2410C", t:"RIT"},
-    wait:{c:"#1E7233", t:"자원대기소"},
-    med:{c:"#BE185D", t:"임시의료소"},
-    hyd:{c:"#1D4ED8", t:"소화전"}
+    wait:{c:"#1E7233", icon:"wait", cap:"자원대기"},
+    med:{c:"#D8262C", icon:"med", cap:"의료소"},
+    hyd:{c:"#1D4ED8", icon:"hyd", cap:"소화전"},
+    crew:{c:"#F29A3C", icon:"crew", cap:"대원"}
   };
   function roundRectPath(x,y,w,h,r){
     ctx.beginPath();
@@ -1969,6 +1982,40 @@
       ctx.fillStyle=d.c; ctx.fill();
       ctx.fillStyle="#fff"; ctx.font="800 17px sans-serif";
       ctx.fillText(d.t,0,1);
+    }else if(d.icon){
+      /* 픽토그램 배지: 색 원 + 흰 그림 + 아래 캡션 */
+      ctx.beginPath(); ctx.arc(0,0,16,0,7);
+      ctx.fillStyle=(d.icon==="med")?"#fff":d.c; ctx.fill();
+      ctx.lineWidth=2; ctx.strokeStyle=(d.icon==="med")?d.c:"rgba(255,255,255,.85)"; ctx.stroke();
+      ctx.fillStyle=(d.icon==="med")?d.c:"#fff";
+      if(d.icon==="hyd"){
+        /* 소화전: 머리(돔)+몸통+양옆 방수구+받침 */
+        ctx.beginPath(); ctx.arc(0,-5.5,4.6,Math.PI,0); ctx.fill();       /* 돔 */
+        ctx.fillRect(-6.5,-6, 13, 2);                                      /* 어깨판 */
+        ctx.fillRect(-3.8,-4, 7.6, 10);                                    /* 몸통 */
+        ctx.fillRect(-7.5,-1.6, 3, 3.2); ctx.fillRect(4.5,-1.6, 3, 3.2);   /* 방수구 */
+        ctx.fillRect(-5.5,6.4, 11, 2.4);                                   /* 받침 */
+        ctx.beginPath(); ctx.arc(0,-9.5,1.6,0,7); ctx.fill();              /* 꼭지 */
+      }else if(d.icon==="med"){
+        /* 의료소: 흰 바탕 + 굵은 십자 */
+        ctx.fillRect(-3.2,-9, 6.4, 18);
+        ctx.fillRect(-9,-3.2, 18, 6.4);
+      }else if(d.icon==="wait"){
+        /* 자원대기소: 집결 깃발 */
+        ctx.fillRect(-5.5,-9, 2.2, 18.5);                                  /* 깃대 */
+        ctx.beginPath(); ctx.moveTo(-3.3,-9); ctx.lineTo(9,-5.2); ctx.lineTo(-3.3,-1.4); ctx.closePath(); ctx.fill();
+      }else if(d.icon==="crew"){
+        /* 대원: 헬멧 쓴 사람 */
+        ctx.beginPath(); ctx.arc(0,-5.2,4.2,0,7); ctx.fill();              /* 머리 */
+        ctx.beginPath(); ctx.arc(0,-6.2,5.4,Math.PI*1.05,Math.PI*1.95); ctx.fill(); /* 헬멧 */
+        roundRectPath(-5.6,0.2, 11.2, 9, 4.4); ctx.fill();                 /* 몸통 */
+      }
+      if(d.cap){
+        ctx.font="800 11px sans-serif";
+        ctx.lineWidth=3.2; ctx.strokeStyle="rgba(255,255,255,.92)"; ctx.lineJoin="round";
+        ctx.strokeText(d.cap, 0, 25);
+        ctx.fillStyle=d.c; ctx.fillText(d.cap, 0, 25);
+      }
     }else{
       ctx.font="800 13px sans-serif";
       var w=ctx.measureText(d.t).width+22, h=27;
@@ -2054,13 +2101,16 @@
     }
     if(!im.complete||!im.naturalWidth) return;
     var w=s.w||200, h=w*im.naturalHeight/im.naturalWidth;
+    var rot=s.rot||0, icx=s.at[0]+w/2, icy=s.at[1]+h/2;
     ctx.save();
+    if(rot){ ctx.translate(icx,icy); ctx.rotate(rot); ctx.translate(-icx,-icy); }
     ctx.shadowColor="rgba(0,0,0,.35)"; ctx.shadowBlur=8/view.s;
     ctx.drawImage(im, s.at[0], s.at[1], w, h);
-    ctx.restore();
+    ctx.shadowColor="transparent";
     ctx.lineWidth=2/view.s; ctx.strokeStyle="#fff";
     ctx.strokeRect(s.at[0], s.at[1], w, h);
-    s.b=[s.at[0]+w, s.at[1]+h];   /* 크기 핸들·앵커 계산용 */
+    ctx.restore();
+    s.b=[s.at[0]+w, s.at[1]+h];   /* 크기 핸들·앵커 계산용(회전 전 좌표계) */
   }
   function drawShape(s){
     if(s.type==="img"){ drawImg(s); return; }
@@ -2082,6 +2132,8 @@
       var x=Math.min(s.a[0],s.b[0]), y=Math.min(s.a[1],s.b[1]);
       var w=Math.abs(s.b[0]-s.a[0]), h=Math.abs(s.b[1]-s.a[1]);
       if(w<2&&h<2) return;
+      var rcx=x+w/2, rcy=y+h/2, rot=s.rot||0;
+      if(rot){ ctx.save(); ctx.translate(rcx,rcy); ctx.rotate(rot); x=-w/2; y=-h/2; }
       ctx.strokeRect(x,y,w,h);
       if(s.type==="building"){
         /* 층 구분선: 높이에 따라 1~6층 */
@@ -2093,6 +2145,7 @@
         }
         ctx.stroke();
       }
+      if(rot) ctx.restore();
     }else if(s.type==="arrow"){
       var dx=s.b[0]-s.a[0], dy=s.b[1]-s.a[1];
       var len=Math.hypot(dx,dy);
@@ -2194,7 +2247,7 @@
       e.preventDefault();
       return;
     }
-    cv.setPointerCapture(e.pointerId);
+    try{ cv.setPointerCapture(e.pointerId); }catch(err){}
     pointers.set(e.pointerId, localXY(e));
     if(pointers.size===1){
       if(tool==="pan"){
@@ -2227,18 +2280,29 @@
         cur={type:"free", e:(tool==="erase"?1:0),
              color:(tool==="erase"?PAPER:penColor),
              width:(tool==="erase"?eraseW:penWidth), pts:[w]};
+      }else if(tool==="st-A"){
+        /* 방면 Ⓐ: 탭한 곳을 건물 중심으로 보고 Ⓐ(위)→Ⓑ(오른쪽)→Ⓒ(아래)→Ⓓ(왼쪽) 시계방향 자동 배치.
+           떼기 전 드래그로 네 개가 함께 이동, 놓은 뒤엔 각각 선택해 개별 조정 */
+        var R=84/view.s;
+        curGroup=[["A",0,-R],["B",R,0],["C",0,R],["D",-R,0]].map(function(q){
+          var st={type:"stamp", sym:q[0], at:[w[0]+q[1], w[1]+q[2]]};
+          strokes.push(st);
+          return {s:st, dx:q[1], dy:q[2]};
+        });
+        cur=curGroup[0].s;
       }else if(tool.indexOf("st-")===0){
         /* 스탬프: 누른 자리에 배치, 떼기 전까지 드래그로 위치 미세조정 */
         cur={type:"stamp", sym:tool.slice(3), at:w};
       }else{
         cur={type:tool, color:penColor, width:penWidth, a:w, b:w};
       }
-      strokes.push(cur);
+      if(!curGroup) strokes.push(cur);
       redraw();   /* 스탬프처럼 탭만 하는 경우도 즉시 표시 (move 없이 up 되면 그릴 기회가 없음) */
     }else if(pointers.size===2){
       panStart=null; pendingNoteAt=null;
       /* 두 번째 손가락 → 방금 시작한 획은 취소하고 팬/줌 모드 */
-      if(cur){ strokes.pop(); cur=null; redraw(); }
+      if(curGroup){ curGroup.forEach(function(){ strokes.pop(); }); curGroup=null; cur=null; redraw(); }
+      else if(cur){ strokes.pop(); cur=null; redraw(); }
       var pts=Array.from(pointers.values());
       nav={ d0:Math.hypot(pts[0][0]-pts[1][0], pts[0][1]-pts[1][1]) || 1,
             m0:[(pts[0][0]+pts[1][0])/2,(pts[0][1]+pts[1][1])/2],
@@ -2277,7 +2341,10 @@
     }else if(cur){
       var p=localXY(e), w=s2w(p[0],p[1]);
       if(cur.type==="free") cur.pts.push(w);
-      else if(cur.type==="stamp") cur.at=w;
+      else if(cur.type==="stamp"){
+        if(curGroup) curGroup.forEach(function(g){ g.s.at=[w[0]+g.dx, w[1]+g.dy]; });
+        else cur.at=w;
+      }
       else cur.b=w;
       redraw();
     }
@@ -2294,10 +2361,11 @@
       }
       var finished=cur;
       if(cur){
-        if(cur.type==="stamp") log("평면도 표기: "+SHAPE_NAMES["st-"+cur.sym]);
+        if(curGroup) log("평면도 표기: 방면 Ⓐ~Ⓓ (시계방향 자동)");
+        else if(cur.type==="stamp") log("평면도 표기: "+SHAPE_NAMES["st-"+cur.sym]);
         scheduleSave();
       }
-      cur=null;
+      cur=null; curGroup=null;
       if(finished){
         redraw();
         if(finished.type!=="free"){
@@ -2328,14 +2396,27 @@
   function shapeBounds(s){
     /* 월드 좌표 경계상자 [x0,y0,x1,y1] — 화면 고정 요소는 화면 크기를 월드로 환산 */
     var k=1/view.s;
+    function rotBox(x0,y0,x1,y1,rot){
+      /* 회전한 사각형의 축정렬 외접 상자 */
+      if(!rot) return [x0,y0,x1,y1];
+      var cx=(x0+x1)/2, cy=(y0+y1)/2, c=Math.cos(rot), si=Math.sin(rot);
+      var xs=[],ys=[];
+      [[x0,y0],[x1,y0],[x1,y1],[x0,y1]].forEach(function(pt){
+        var dx=pt[0]-cx, dy=pt[1]-cy;
+        xs.push(cx+dx*c-dy*si); ys.push(cy+dx*si+dy*c);
+      });
+      return [Math.min.apply(null,xs),Math.min.apply(null,ys),Math.max.apply(null,xs),Math.max.apply(null,ys)];
+    }
     if(s.type==="rect"||s.type==="building")
-      return [Math.min(s.a[0],s.b[0]),Math.min(s.a[1],s.b[1]),Math.max(s.a[0],s.b[0]),Math.max(s.a[1],s.b[1])];
+      return rotBox(Math.min(s.a[0],s.b[0]),Math.min(s.a[1],s.b[1]),Math.max(s.a[0],s.b[0]),Math.max(s.a[1],s.b[1]), s.rot||0);
     if(s.type==="arrow"){
       var pad=8*k;
       return [Math.min(s.a[0],s.b[0])-pad,Math.min(s.a[1],s.b[1])-pad,Math.max(s.a[0],s.b[0])+pad,Math.max(s.a[1],s.b[1])+pad];
     }
     if(s.type==="stamp"){
-      var d=STAMPS[s.sym]; var hw=(d&&d.letter)?18*k:46*k;
+      var d=STAMPS[s.sym];
+      if(d&&d.icon) return [s.at[0]-18*k, s.at[1]-18*k, s.at[0]+18*k, s.at[1]+31*k];
+      var hw=(d&&d.letter)?18*k:46*k;
       return [s.at[0]-hw, s.at[1]-16*k, s.at[0]+hw, s.at[1]+16*k];
     }
     if(s.type==="marker") return [s.at[0]-12*k, s.at[1]-32*k, s.at[0]+80*k, s.at[1]+2*k];
@@ -2344,7 +2425,7 @@
       var bh=(lines*17+14)*k;
       return [s.at[0], s.at[1]-bh-16*k, s.at[0]+190*k, s.at[1]+2*k];
     }
-    if(s.type==="img"&&s.b) return [s.at[0], s.at[1], s.b[0], s.b[1]];
+    if(s.type==="img"&&s.b) return rotBox(s.at[0], s.at[1], s.b[0], s.b[1], s.rot||0);
     return null;
   }
   function hitShape(w){
@@ -2386,6 +2467,7 @@
     if(box){ box.style.left=x0+"px"; box.style.top=y0+"px"; box.style.width=(x1-x0)+"px"; box.style.height=(y1-y0)+"px"; }
     var xb=shapeXLayer.querySelector(".sx"); if(xb){ xb.style.left=x1+"px"; xb.style.top=y0+"px"; }
     var h=shapeXLayer.querySelector(".sh");  if(h){ h.style.left=x1+"px"; h.style.top=y1+"px"; }
+    var rr=shapeXLayer.querySelector(".sr"); if(rr){ rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px"; }
   }
   function rebuildShapeX(){
     shapeXLayer.textContent="";
@@ -2435,8 +2517,16 @@
       h.addEventListener("pointerdown",function(e){
         e.stopPropagation(); e.preventDefault();
         try{ h.setPointerCapture(e.pointerId); }catch(err){}
+        var rc0=(function(){ var bb0={x0:Math.min(s.a?s.a[0]:s.at[0], s.b[0]), y0:Math.min(s.a?s.a[1]:s.at[1], s.b[1]),
+                                        x1:Math.max(s.a?s.a[0]:s.at[0], s.b[0]), y1:Math.max(s.a?s.a[1]:s.at[1], s.b[1])};
+                             return [(bb0.x0+bb0.x1)/2,(bb0.y0+bb0.y1)/2]; })();
         function mv(ev){
           var p=localXY(ev), w=s2w(p[0],p[1]);
+          var rot=s.rot||0;
+          if(rot){ /* 회전된 도형: 포인터를 로컬(비회전) 좌표로 되돌려 크기 계산 */
+            var dx=w[0]-rc0[0], dy=w[1]-rc0[1], c=Math.cos(-rot), si=Math.sin(-rot);
+            w=[rc0[0]+dx*c-dy*si, rc0[1]+dx*si+dy*c];
+          }
           if(s.type==="img"){ s.w=Math.max(40, w[0]-s.at[0]); }
           else s.b=w;
           redraw(); layoutShapeX();
@@ -2452,6 +2542,41 @@
         h.addEventListener("pointercancel",up);
       });
       shapeXLayer.appendChild(h);
+    }
+    if(s.type==="rect"||s.type==="building"||(s.type==="img"&&s.b)){
+      /* 회전 핸들: 선택 상자 위쪽 중앙, 드래그로 중심 기준 회전 (45° 근처는 스냅) */
+      var rr=document.createElement("button");
+      rr.className="sr"; rr.textContent="↻"; rr.setAttribute("aria-label","도형 회전");
+      rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px";
+      rr.addEventListener("pointerdown",function(e){
+        e.stopPropagation(); e.preventDefault();
+        try{ rr.setPointerCapture(e.pointerId); }catch(err){}
+        var bb0=shapeBounds(s);
+        var cx=(bb0[0]+bb0[2])/2, cy=(bb0[1]+bb0[3])/2;
+        var p0=localXY(e), w0=s2w(p0[0],p0[1]);
+        var a0=Math.atan2(w0[1]-cy, w0[0]-cx), rot0=s.rot||0;
+        function mv(ev){
+          var p=localXY(ev), w=s2w(p[0],p[1]);
+          var a=Math.atan2(w[1]-cy, w[0]-cx);
+          var rot=rot0+(a-a0);
+          /* 45° 배수 근처(±5°)는 스냅 */
+          var snap=Math.round(rot/(Math.PI/4))*(Math.PI/4);
+          if(Math.abs(rot-snap)<0.087) rot=snap;
+          s.rot=rot;
+          redraw(); layoutShapeX();
+        }
+        function up(){
+          rr.removeEventListener("pointermove",mv);
+          rr.removeEventListener("pointerup",up);
+          rr.removeEventListener("pointercancel",up);
+          if(Math.abs(s.rot||0)<0.001) delete s.rot;
+          rebuildShapeX(); scheduleSave();
+        }
+        rr.addEventListener("pointermove",mv);
+        rr.addEventListener("pointerup",up);
+        rr.addEventListener("pointercancel",up);
+      });
+      shapeXLayer.appendChild(rr);
     }
   }
   cv.addEventListener("pointerup",penUp);
@@ -2486,8 +2611,8 @@
   var shapeBtn=document.getElementById("shapeBtn");
   var shapeMenu=document.getElementById("shapeMenu");
   var SHAPE_NAMES={arrow:"화살표", rect:"사각형", building:"건물",
-    "st-A":"A방면","st-B":"B방면","st-C":"C방면","st-D":"D방면",
-    "st-RIT":"RIT","st-wait":"자원대기소","st-med":"임시의료소","st-hyd":"소화전"};
+    "st-A":"방면 Ⓐ~Ⓓ","st-B":"B방면","st-C":"C방면","st-D":"D방면",
+    "st-RIT":"RIT","st-wait":"자원대기소","st-med":"임시의료소","st-hyd":"소화전","st-crew":"대원"};
   function closeShapeMenu(){
     shapeMenu.hidden=true; shapeBtn.setAttribute("aria-expanded","false");
   }
