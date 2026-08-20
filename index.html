@@ -134,6 +134,16 @@
   }
   #shapeXLayer .sr:active{background:var(--amber); border-color:var(--amber)}
   #shapeXLayer .sr::before{content:""; position:absolute; inset:-12px}
+  #shapeXLayer .sg{
+    position:absolute; transform:translate(-50%,-50%);
+    width:22px; height:22px; padding:0; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; border:1px solid rgba(0,0,0,.35);
+    background:#fff; color:#22262A; font-size:13px; line-height:1; font-weight:800;
+    box-shadow:0 1px 3px rgba(0,0,0,.3); cursor:move;
+  }
+  #shapeXLayer .sg:active{background:var(--amber); border-color:var(--amber)}
+  #shapeXLayer .sg::before{content:""; position:absolute; inset:-12px}
   #shapeXLayer .selBox{
     position:absolute; pointer-events:auto; touch-action:none; cursor:move;
     border:1.5px dashed var(--amber); border-radius:4px;
@@ -827,7 +837,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.32</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.33</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -2476,6 +2486,7 @@
       else{ h.style.left=x1+"px"; h.style.top=y1+"px"; }
     });
     var rr=shapeXLayer.querySelector(".sr"); if(rr){ rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px"; }
+    var gm=shapeXLayer.querySelector(".sg"); if(gm){ gm.style.left=x0+"px"; gm.style.top=y0+"px"; }
   }
   function rebuildShapeX(){
     shapeXLayer.textContent="";
@@ -2674,6 +2685,34 @@
         gh.addEventListener("pointercancel",up);
       });
       shapeXLayer.appendChild(gh);
+      /* 전체 이동 핸들(✥): 네 방면이 배치 그대로 함께 이동 — 개별 이동은 선택 상자 드래그 그대로 */
+      var gm=document.createElement("button");
+      gm.className="sg"; gm.textContent="✥"; gm.setAttribute("aria-label","방면 전체 이동");
+      gm.style.left=x0+"px"; gm.style.top=y0+"px";
+      gm.addEventListener("pointerdown",function(e){
+        e.stopPropagation(); e.preventDefault();
+        try{ gm.setPointerCapture(e.pointerId); }catch(err){}
+        var members=strokes.filter(function(k){ return k.type==="stamp"&&k.grp===s.grp; });
+        if(!members.length) return;
+        var at0=members.map(function(m){ return [m.at[0], m.at[1]]; });
+        var p0=localXY(e), w0=s2w(p0[0],p0[1]);
+        function mv(ev){
+          var p=localXY(ev), w=s2w(p[0],p[1]);
+          var dx=w[0]-w0[0], dy=w[1]-w0[1];
+          members.forEach(function(m,i){ m.at=[at0[i][0]+dx, at0[i][1]+dy]; });
+          redraw(); layoutShapeX();
+        }
+        function up(){
+          gm.removeEventListener("pointermove",mv);
+          gm.removeEventListener("pointerup",up);
+          gm.removeEventListener("pointercancel",up);
+          rebuildShapeX(); scheduleSave();
+        }
+        gm.addEventListener("pointermove",mv);
+        gm.addEventListener("pointerup",up);
+        gm.addEventListener("pointercancel",up);
+      });
+      shapeXLayer.appendChild(gm);
     }
     if(s.type==="rect"||s.type==="building"||(s.type==="img"&&s.b)){
       /* 회전 핸들: 선택 상자 위쪽 중앙, 드래그로 중심 기준 회전 (45° 근처는 스냅) */
