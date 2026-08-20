@@ -837,7 +837,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.35</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.36</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1131,9 +1131,10 @@
     <div class="stTabs" id="aiProvTabs">
       <button class="stTab" data-p="gemini">Google Gemini <span class="presetSub" style="margin:0">무료 티어</span></button>
       <button class="stTab" data-p="anthropic">Anthropic Claude</button>
+      <button class="stTab" data-p="ocr">기기 내 OCR <span class="presetSub" style="margin:0">키 불필요</span></button>
     </div>
     <p class="presetSub" id="aiProvNote"></p>
-    <p class="aiKeyLbl">API 키 <span style="font-weight:600">— 이 기기의 브라우저에만 저장됩니다</span></p>
+    <p class="aiKeyLbl" id="aiKeyLbl1">API 키 <span style="font-weight:600">— 이 기기의 브라우저에만 저장됩니다</span></p>
     <input id="aiKeyIn" type="password" placeholder="" spellcheck="false" autocomplete="off">
     <p class="aiKeyLbl" id="aiModelLbl">모델</p>
     <input id="aiModelIn" placeholder="" spellcheck="false" autocomplete="off">
@@ -3801,14 +3802,16 @@
   /* 공급자 2종: gemini(Google AI Studio 무료 티어, 기본) / anthropic(Claude, 유료).
      키·모델은 공급자별로 기기 localStorage에만 저장 */
   var AI_PROV_K="fireboard-ai-prov";
-  var AI_KEY_KS={gemini:"fireboard-ai-key-gemini", anthropic:"fireboard-ai-key"};
-  var AI_MODEL_KS={gemini:"fireboard-ai-model-gemini", anthropic:"fireboard-ai-model"};
-  var AI_MODEL_DEFS={gemini:"gemini-3.6-flash", anthropic:"claude-opus-5"};   /* 2.5-flash는 신규 사용자에게 404(2026-08 확인) */
+  var AI_KEY_KS={gemini:"fireboard-ai-key-gemini", anthropic:"fireboard-ai-key", ocr:"fireboard-ai-key-ocr"};
+  var AI_MODEL_KS={gemini:"fireboard-ai-model-gemini", anthropic:"fireboard-ai-model", ocr:"fireboard-ai-model-ocr"};
+  var AI_MODEL_DEFS={gemini:"gemini-3.6-flash", anthropic:"claude-opus-5", ocr:"tesseract-kor"};   /* 2.5-flash는 신규 사용자에게 404(2026-08 확인) */
   var AI_PROV_INFO={
     gemini:{name:"Google Gemini", ph:"AQ.… 또는 AIza…",
       note:"키는 aistudio.google.com/apikey 에서 무료로 발급합니다. 무료 티어는 구글이 입력한 내용을 서비스 개선에 쓸 수 있으니 기관 정책을 확인하세요. 지령서 사진은 Google API로 직접 전송됩니다."},
     anthropic:{name:"Anthropic Claude", ph:"sk-ant-…",
-      note:"키는 console.anthropic.com 에서 발급합니다(유료 — 지령서 1장당 약 $0.02~0.10). 지령서 사진은 Anthropic API로 직접 전송됩니다."}
+      note:"키는 console.anthropic.com 에서 발급합니다(유료 — 지령서 1장당 약 $0.02~0.10). 지령서 사진은 Anthropic API로 직접 전송됩니다."},
+    ocr:{name:"기기 내 OCR", ph:"",
+      note:"API 키 없이 이 기기에서 글자를 읽습니다(사진이 외부로 전송되지 않음). 첫 실행 때 인식엔진(약 15MB)을 내려받아 저장합니다. 정면에서 선명하게 찍힌 지령서에 적합하며, 기울어지거나 흐린 사진은 AI 방식보다 부정확할 수 있습니다."}
   };
   function lsGet(k){ try{ return localStorage.getItem(k)||""; }catch(e){ return ""; } }
   function aiProv(){
@@ -3878,6 +3881,12 @@
     aiProvTabs.querySelectorAll(".stTab").forEach(function(b){ b.setAttribute("aria-pressed", b.dataset.p===p?"true":"false"); });
     var info=AI_PROV_INFO[p];
     aiProvNote.textContent=info.note;
+    var noKey=(p==="ocr");
+    document.getElementById("aiKeyLbl1").style.display=noKey?"none":"";
+    aiKeyIn.style.display=noKey?"none":"";
+    aiModelLbl.style.display=noKey?"none":"";
+    aiModelIn.style.display=noKey?"none":"";
+    if(noKey){ aiKeyShow('아래 "저장"을 누르면 이 기기에서 OCR 방식을 사용합니다.'); return; }
     aiKeyIn.placeholder=info.ph; aiKeyIn.value=aiKey(p);
     aiModelLbl.textContent="모델 (비우면 기본값 "+AI_MODEL_DEFS[p]+")";
     aiModelIn.placeholder=AI_MODEL_DEFS[p];
@@ -3898,6 +3907,12 @@
     aiKeyIn.value=""; aiModelIn.value=""; aiKeyShow("이 기기에서 "+AI_PROV_INFO[aiEditProv].name+" 키를 삭제했습니다");
   });
   document.getElementById("aiKeySave").addEventListener("click",function(){
+    if(aiEditProv==="ocr"){
+      try{ localStorage.setItem(AI_PROV_K,"ocr"); }catch(e){}
+      aiKeyModal.hidden=true;
+      if(aiPendingPick){ aiPendingPick=false; aiFile.value=""; aiFile.click(); }
+      return;
+    }
     var k=aiKeyIn.value.trim(), m=aiModelIn.value.trim();
     if(!k){ aiKeyShow("API 키를 입력하세요"); aiKeyIn.focus(); return; }
     try{
@@ -3911,7 +3926,7 @@
   aiKeyModal.addEventListener("pointerdown",function(e){ if(e.target===aiKeyModal){ aiKeyModal.hidden=true; aiPendingPick=false; } });
 
   document.getElementById("aiBtn").addEventListener("click",function(){
-    if(!aiKey()){ aiPendingPick=true; openAiKey(); return; }
+    if(aiProv()!=="ocr" && !aiKey()){ aiPendingPick=true; openAiKey(); return; }
     aiFile.value=""; aiFile.click();
   });
   aiRetry.addEventListener("click",function(){ aiFile.value=""; aiFile.click(); });
@@ -4062,6 +4077,95 @@
         });
       });
   }
+  /* ── 기기 내 OCR (Tesseract.js — CDN에서 지연 로드, SW가 캐시해 이후 오프라인 동작) ── */
+  var ocrWorkerP=null;
+  function ocrEnsure(){
+    if(ocrWorkerP) return ocrWorkerP;
+    ocrWorkerP=new Promise(function(res,rej){
+      if(window.Tesseract) return res();
+      var sc=document.createElement("script");
+      sc.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+      sc.onload=function(){ res(); };
+      sc.onerror=function(){ rej(new Error("OCR 엔진을 내려받지 못했습니다 — 인터넷 연결을 확인하세요")); };
+      document.head.appendChild(sc);
+    }).then(function(){
+      return Tesseract.createWorker("kor", 1, {
+        workerPath:"https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",
+        corePath:"https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0",
+        langPath:"https://cdn.jsdelivr.net/npm/@tesseract.js-data/kor@1.0.0/4.0.0_best_int",
+        logger:function(m){
+          if(m.status==="recognizing text") aiSetStatus("OCR 인식 중… "+Math.round((m.progress||0)*100)+"%");
+          else if(m.status&&m.status.indexOf("load")>=0) aiSetStatus("OCR 엔진 준비 중… (첫 실행은 약 15MB 내려받음)");
+        }
+      });
+    });
+    ocrWorkerP.catch(function(){ ocrWorkerP=null; });
+    return ocrWorkerP;
+  }
+  function ocrPrep(file){
+    /* 흑백·대비 강화 캔버스 (긴 변 2400px) */
+    return new Promise(function(res,rej){
+      var rd=new FileReader();
+      rd.onerror=function(){ rej(new Error("파일을 읽지 못했습니다")); };
+      rd.onload=function(){
+        var im=new Image();
+        im.onerror=function(){ rej(new Error("이미지를 열지 못했습니다")); };
+        im.onload=function(){
+          var MAX=2400, sc=Math.min(1, MAX/Math.max(im.naturalWidth,im.naturalHeight));
+          var c=document.createElement("canvas");
+          c.width=Math.round(im.naturalWidth*sc); c.height=Math.round(im.naturalHeight*sc);
+          var g=c.getContext("2d");
+          g.filter="grayscale(1) contrast(1.5)";
+          g.drawImage(im,0,0,c.width,c.height);
+          res(c);
+        };
+        im.src=rd.result;
+      };
+      rd.readAsDataURL(file);
+    });
+  }
+  var OCR_KIND_MAP={"펌프":"펌프","물탱크":"탱크","탱크":"탱크","구급":"구급","구조":"구조","사다리":"사다리",
+    "고가":"사다리","굴절":"굴절","화학":"화학","조연":"조연","약제":"약제","무인":"무인","음압":"음압","지휘":"지휘"};
+  function ocrParse(text){
+    var units=[], seen={};
+    var inc={type:"",address:"",report:"",title:""};
+    var mt=text.replace(/\s+/g,"").match(/(화재|구조|구급)\((\d차출동)\)/);
+    if(mt) inc.type=mt[1]+"("+mt[2]+")";
+    text.split(/\n+/).forEach(function(raw){
+      var line=raw.replace(/\s+/g,"");
+      if(!line) return;
+      if(!inc.address && /울산/.test(line) && /\d/.test(line) && /(로|길|동)\d/.test(line))
+        inc.address=raw.replace(/\s+/g," ").trim().slice(0,50);
+      var crew=(line.match(/[\/(](\d{1,2})명/)||line.match(/(\d{1,2})명/)||[])[1];
+      /* 차량명 패턴: 센터명(2~4자) + [n선] + 차종 + [n[선]] */
+      var re=/([가-힣]{2,4}?)(\d)?선?(펌프|물탱크|탱크|구급|구조|사다리|고가|굴절|화학|조연|약제|무인|음압|지휘)(\d)?선?/g, m;
+      while((m=re.exec(line))){
+        var st=m[1].replace(/(소형|중형|대형|고가|특수|안전|센터)$/,"");
+        var kindWord=m[3], num=m[2]||m[4]||"";
+        if(/펌프|탱크|구급|구조|화학|지휘|사다리|굴절|조연|약제|무인|음압/.test(st)) continue;  /* 표 머리글 오인 방지 */
+        if(/^(긴급|출동|비상|소방|울산|재난|현장|신고|번호)/.test(st)) continue;              /* 문서 머리글 낱말 제외 */
+        if(st.length<2) continue;
+        var kind=OCR_KIND_MAP[kindWord]||"기타";
+        var key=st+"|"+kind+"|"+num;
+        if(seen[key]) continue;
+        seen[key]=1;
+        units.push({station:st, vehicle:m[0], kind:kind, number:num?parseInt(num,10):0, crew:crew?parseInt(crew,10):0});
+      }
+    });
+    return {incident:inc, units:units};
+  }
+  function ocrRun(file){
+    aiSetStatus("OCR 엔진 준비 중… (첫 실행은 약 15MB 내려받음)");
+    return Promise.all([ocrEnsure(), ocrPrep(file)]).then(function(rr){
+      var worker=rr[0], canvas=rr[1];
+      return worker.recognize(canvas);
+    }).then(function(out){
+      var data=ocrParse((out&&out.data&&out.data.text)||"");
+      if(!data.units.length) throw new Error("출동대를 읽지 못했습니다 — 정면에서 선명하게 다시 찍거나, API 설정에서 AI 방식(Gemini)을 선택해 보세요");
+      return data;
+    });
+  }
+
   /* 모델 출력 → 프리셋 이름 매핑 */
   function aiNormSt(st){
     return (st||"").replace(/[★☆\s()]/g,"")
@@ -4152,7 +4256,8 @@
     aiRows=[]; aiIncident=null; aiList.textContent=""; aiInfo.textContent=""; aiOpts.textContent="";
     aiAdd.disabled=true; aiN.textContent="0"; aiRetry.hidden=true;
     var t0=Date.now();
-    aiSetStatus("지령서를 읽는 중… ("+AI_PROV_INFO[aiProv()].name+" · 30~60초 걸립니다)");
+    var isOcr=aiProv()==="ocr";
+    aiSetStatus(isOcr?"OCR 준비 중…":"지령서를 읽는 중… ("+AI_PROV_INFO[aiProv()].name+" · 30~60초 걸립니다)");
     aiModal.hidden=false;
     /* 경과 시간 표시 — 멈춘 게 아니라 처리 중임을 보여줌 */
     var aiTick=setInterval(function(){
@@ -4161,10 +4266,15 @@
       if(document.getElementById("aiStatus").textContent.indexOf("읽는 중")>=0)
         aiSetStatus("지령서를 읽는 중… "+sec+"초 ("+AI_PROV_INFO[aiProv()].name+" · 보통 30~60초)");
     },1000);
-    var aiTimeout=new Promise(function(_,rej){ setTimeout(function(){ rej(new Error("응답이 너무 늦습니다(2분 초과) — 인터넷 상태를 확인하고 다시 시도하세요")); },120000); });
-    Promise.race([aiPrepImage(f).then(function(b64){ return aiCall(b64); }), aiTimeout]).then(function(txt){
+    var aiTimeout=new Promise(function(_,rej){ setTimeout(function(){ rej(new Error("응답이 너무 늦습니다("+(isOcr?"5":"2")+"분 초과) — "+(isOcr?"기기 성능이 부족하거나 엔진 다운로드가 막혔을 수 있습니다":"인터넷 상태를 확인하고 다시 시도하세요"))); }, isOcr?300000:120000); });
+    var job=isOcr
+      ? ocrRun(f)
+      : aiPrepImage(f).then(function(b64){ return aiCall(b64); }).then(function(txt){
+          var d; try{ d=JSON.parse(txt); }catch(e){ throw new Error("응답을 해석하지 못했습니다"); }
+          return d;
+        });
+    Promise.race([job, aiTimeout]).then(function(data){
       clearInterval(aiTick);
-      var data; try{ data=JSON.parse(txt); }catch(e){ throw new Error("응답을 해석하지 못했습니다"); }
       aiIncident=data.incident||{};
       var have=existingNames();
       var seen={};
