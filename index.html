@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.59</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.60</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -3380,7 +3380,7 @@
     var removed=0;
     document.querySelectorAll(".chip").forEach(function(c){
       var cm=+(c.dataset.mi||0);
-      if(cm===i){ c.remove(); removed++; }
+      if(cm===i){ chipDel[cm+"|"+c.dataset.name]=Date.now(); c.remove(); removed++; }
       else if(cm>i){ c.dataset.mi=cm-1; }
     });
     var name=maps[i].n||("지도 "+(i+1));
@@ -3400,11 +3400,21 @@
     for(i=0;i<t.length;i++) h=((h<<5)+h+t.charCodeAt(i))|0;
     return "h"+(h>>>0).toString(36);
   }
+  function strokeKey(x){
+    /* 안정 ID: 최초 확인 시 내용 해시를 id로 굳힌다(양쪽 기기에서 동일하게 계산됨) —
+       이후 이동·수정으로 내용이 바뀌어도 id는 유지 → 병합 시 같은 선으로 인식(V2.60) */
+    return x.id||strokeHash(x);
+  }
+  function ensureStrokeIds(){
+    (maps||[]).forEach(function(m){
+      (m.strokes||[]).forEach(function(x){ if(!x.id) x.id=strokeHash(x); });
+    });
+  }
   function markDeleted(list){
     if(!maps[mi]) return;
     var del=maps[mi].del||(maps[mi].del={});
     var now=Date.now();
-    list.forEach(function(x){ del[strokeHash(x)]=now; });
+    list.forEach(function(x){ del[strokeKey(x)]=now; });
     var ks=Object.keys(del);
     if(ks.length>800){
       ks.sort(function(a,b){ return del[a]-del[b]; })
@@ -5143,6 +5153,7 @@
       ckd[rid]=Object.keys(ckState[rid]).map(Number);
     });
     syncMapState();
+    ensureStrokeIds();   /* 병합 식별을 위해 모든 선에 id 확정(V2.60) */
     return {
       v:1, incident:incidentEl.textContent, view:view, strokes:strokes, geo:geo,
       maps:maps, mi:mi,
@@ -5322,6 +5333,8 @@
     return o;
   }
   function mergeChips(b,r,l,cdel){
+    /* 삭제는 오직 cdel(삭제 기록)로만 — "한쪽에 없음"은 그쪽이 아직 못 본 것일 수 있어
+       삭제로 해석하지 않는다(늦은 푸시가 남의 새 말을 지우던 버그 수정, V2.60) */
     var mb={},mr={},ml={};
     function key(c){ return (c.m||0)+"|"+c.n; }
     (b||[]).forEach(function(c){ mb[key(c)]=c; });
@@ -5329,12 +5342,14 @@
     (l||[]).forEach(function(c){ ml[key(c)]=c; });
     var seen={}, out=[];
     function pick(k){
-      var jb=js(mb[k]), jr=js(mr[k]), jl=js(ml[k]);
-      if(jl===jb) return mr[k];          /* 로컬 무변경 → 원격 따름(원격 삭제 포함) */
-      if(jr===jb) return ml[k];          /* 원격 무변경 → 로컬 따름(로컬 삭제 포함) */
       var lv=ml[k], rv=mr[k];
-      if(lv&&rv) return ((rv.t||0)>(lv.t||0))?rv:lv;   /* 양쪽 변경 → 나중 변경(시간 순) 우선 */
-      return lv||rv;
+      if(lv&&rv){
+        var jb=js(mb[k]);
+        if(js(lv)===jb) return rv;       /* 로컬 무변경 → 원격 버전 */
+        if(js(rv)===jb) return lv;       /* 원격 무변경 → 로컬 버전 */
+        return ((rv.t||0)>(lv.t||0))?rv:lv;   /* 양쪽 수정 → 나중(시간 순) 우선 */
+      }
+      return lv||rv;                     /* 한쪽에만 있으면 유지 — 삭제는 cdel이 담당 */
     }
     (r||[]).concat(l||[]).forEach(function(c){
       var k=key(c); if(seen[k]) return; seen[k]=1;
@@ -5346,27 +5361,36 @@
   }
   function delFilter(arr,del){
     if(!del) return arr||[];
-    return (arr||[]).filter(function(x){ return !(strokeHash(x) in del); });
+    return (arr||[]).filter(function(x){ return !(strokeKey(x) in del); });
   }
   function mergeStrokes(b,r,l){
+    /* id 기준 3-way: 한쪽에만 있으면 유지(없음≠삭제 — 삭제는 del 툼스톤이 담당),
+       양쪽에 있으면 base와 비교해 바뀐 쪽, 둘 다 바뀌면 로컬. 같은 id라 이동해도 중복 없음 */
     b=b||[]; r=r||[]; l=l||[];
-    var bs={},rs={},ls={};
-    b.forEach(function(x){ bs[js(x)]=1; });
-    r.forEach(function(x){ rs[js(x)]=1; });
-    l.forEach(function(x){ ls[js(x)]=1; });
-    var out=[];
-    r.forEach(function(x){ var j=js(x); if(bs[j]&&!ls[j]) return; out.push(x); });   /* 로컬이 지운 것 제외 */
-    l.forEach(function(x){ var j=js(x); if(!rs[j]&&!bs[j]) out.push(x); });          /* 로컬 추가분 */
+    var mb={},ml={};
+    b.forEach(function(x){ mb[strokeKey(x)]=x; });
+    l.forEach(function(x){ ml[strokeKey(x)]=x; });
+    var seen={}, out=[];
+    r.forEach(function(x){
+      var k=strokeKey(x); seen[k]=1;
+      var lv=ml[k];
+      if(!lv){ out.push(x); return; }
+      var jb=js(mb[k]||null);
+      if(js(lv)===jb) out.push(x);        /* 로컬 무변경 → 원격 버전 */
+      else out.push(lv);                  /* 로컬이 수정(원격 무변경 포함) → 로컬 버전 */
+    });
+    l.forEach(function(x){
+      var k=strokeKey(x);
+      if(!seen[k]) out.push(x);           /* 원격이 아직 못 본 로컬 선 — 반드시 유지 */
+    });
     return out;
   }
   function mergeMaps(b,r,l){
     b=b||[]; r=r||[]; l=l||[];
     if(!r.length) return l;
     if(!l.length) return r;
-    var n;
-    if(l.length!==b.length && r.length===b.length) n=l.length;
-    else if(r.length!==b.length && l.length===b.length) n=r.length;
-    else n=Math.max(r.length,l.length);
+    /* 탭 수는 항상 큰 쪽 — 늦은 푸시가 새 탭을 지우지 않게 (탭 삭제 전파는 드문 경쟁에서 유령 복귀 가능) */
+    var n=Math.max(r.length,l.length);
     var out=[];
     for(var i=0;i<n;i++){
       var mb=b[i], mr=r[i], ml=l[i];
@@ -5375,18 +5399,13 @@
       var src;
       if(!mr) src=ml;
       else if(!ml) src=mr;
-      else{
-        var jb=js(mb||null);
-        if(js(ml)===jb) src=mr;
-        else if(js(mr)===jb) src=ml;
-        else src={
-          n: (mb&&ml.n!==mb.n)?ml.n:mr.n,
-          view: ml.view||mr.view,
-          geo: (js(ml.geo)!==js(mb?mb.geo:null))?ml.geo:mr.geo,
-          strokes: mergeStrokes(mb&&mb.strokes, mr.strokes, ml.strokes)
-        };
-      }
-      /* 어떤 경로든 삭제 기록 합집합을 적용 — 늦은 푸시가 지운 선을 되살리지 못함 */
+      else src={
+        n: (mb&&ml.n!==mb.n)?ml.n:mr.n,
+        view: ml.view||mr.view,
+        geo: (js(ml.geo)!==js(mb?mb.geo:null))?ml.geo:mr.geo,
+        strokes: mergeStrokes(mb&&mb.strokes, mr.strokes, ml.strokes)
+      };
+      /* 삭제 기록 합집합을 항상 적용 */
       out.push({ n:src.n, view:src.view, geo:src.geo, del:del,
                  strokes:delFilter(src.strokes, del) });
     }
@@ -5463,6 +5482,7 @@
         else if(!m.view) m.view={s:1,tx:0,ty:0};
       });
       maps=incoming;
+      ensureStrokeIds();
       if(mi>=maps.length) mi=maps.length-1;
       strokes=maps[mi].strokes; view=maps[mi].view; geo=maps[mi].geo; geoO=null;
       updateMapUi(); renderMapTabs();
