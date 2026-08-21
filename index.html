@@ -960,7 +960,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.53</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.54</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -1320,7 +1320,7 @@
       <li>생성된 키(<b>AIza…</b> 형태)를 <b>복사</b></li>
       <li>이 앱의 API 설정 화면 → <b>Google Gemini</b> 탭 → API 키 칸에 <b>붙여넣기</b> → 저장</li>
     </ol>
-    <p class="presetSub" style="margin:0">키는 이 기기의 브라우저에만 저장되고 지령서 사진은 Google API로만 전송됩니다.
+    <p class="presetSub" style="margin:0">키는 이 기기의 브라우저에만 저장됩니다.
       키 발급이 안 되면 잠시 후 다시 시도하거나, 키 없이 쓰는 "기기 내 OCR"을 선택하세요.</p>
     <div class="chipActions">
       <button class="btn" id="aiHelpOpen">🔗 키 발급 페이지 열기</button>
@@ -4283,7 +4283,7 @@
   var AI_MODEL_DEFS={gemini:"gemini-3.6-flash", anthropic:"claude-opus-5", ocr:"tesseract-kor"};   /* 2.5-flash는 신규 사용자에게 404(2026-08 확인) */
   var AI_PROV_INFO={
     gemini:{name:"Google Gemini", ph:"AQ.… 또는 AIza…",
-      note:"키는 aistudio.google.com/apikey 에서 무료로 발급합니다. 무료 티어는 구글이 입력한 내용을 서비스 개선에 쓸 수 있으니 기관 정책을 확인하세요. 지령서 사진은 Google API로 직접 전송됩니다."},
+      note:"키는 aistudio.google.com/apikey 에서 무료로 발급합니다."},
     anthropic:{name:"Anthropic Claude", ph:"sk-ant-…",
       note:"키는 console.anthropic.com 에서 발급합니다(유료 — 지령서 1장당 약 $0.02~0.10). 지령서 사진은 Anthropic API로 직접 전송됩니다."},
     ocr:{name:"기기 내 OCR", ph:"",
