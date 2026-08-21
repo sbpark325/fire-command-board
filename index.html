@@ -428,7 +428,7 @@
   }
   .chip .x:active{background:var(--red); border-color:var(--red)}
   #laneList .laneBody .chip .x{display:none}
-  /* 분대 배치 배지: 평면도 말 좌상단 — 누르면 대원 심볼이 바로 옆에 생성 */
+  /* 대원 배치 배지: 평면도 말 좌상단 — 누르면 대원 심볼이 바로 옆에 생성 */
   .chip .sq{
     position:absolute; top:-7px; left:-5px; width:16px; height:16px;
     display:none; align-items:center; justify-content:center; padding:0;
@@ -890,7 +890,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.45</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.46</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -934,8 +934,8 @@
     </div>
 
     <div class="tools" role="toolbar" aria-label="그리기 도구">
-      <button data-tool="pan" aria-pressed="false">이동</button>
-      <button data-tool="pen" aria-pressed="true">펜</button>
+      <button data-tool="pan" aria-pressed="true">이동</button>
+      <button data-tool="pen" aria-pressed="false">펜</button>
       <button data-tool="erase" aria-pressed="false">지우개</button>
       <button data-tool="note" aria-pressed="false">메모</button>
       <button id="shapeBtn" aria-expanded="false" aria-pressed="false">도형 ▾</button>
@@ -1041,7 +1041,7 @@
     <div class="chipActions">
       <button class="btn" id="ciContacts" title="연락처 JSON 파일을 이 기기에 불러옵니다">연락처 파일</button>
       <span class="grow"></span>
-      <button class="btn" id="ciSquad" title="이 출동대의 분대(대원) 심볼을 지도에 놓습니다">분대 배치</button>
+      <button class="btn" id="ciSquad" title="이 출동대의 대원 심볼을 지도에 놓습니다">대원 배치</button>
       <button class="btn" id="ciEdit">말 편집</button>
       <button class="btn primary" id="ciClose">닫기</button>
     </div>
@@ -2140,7 +2140,7 @@
      여기서 호출하면 redraw가 미정의 strokes를 참조해 부트 전체가 죽는다 */
 
   /* ── 캔버스: 펜/도형 그리기 + 두 손가락 팬/줌 ── */
-  var strokes=maps[mi].strokes, cur=null, tool="pen";
+  var strokes=maps[mi].strokes, cur=null, tool="pan";   /* 기본 도구는 이동 — 열자마자 지도 탐색·말 선택 */
   var curGroup=null;   /* 방면 Ⓐ~Ⓓ 묶음 배치 중 */
   /* 그리기 옵션: 펜 색상 6종·굵기 3단계, 지우개 크기 3단계 */
   var PEN_COLORS=["#22262A","#E0432D","#1D4ED8","#1E7233","#D97F1E","#7A4EC5","#FFFFFF"];
@@ -3260,8 +3260,8 @@
     chip.appendChild(lb);
     /* 좌상단 분대 배지(평면도에서만 보임): 누르면 대원 심볼이 말 옆에 바로 생성 */
     var sqb=document.createElement("button");
-    sqb.className="sq"; sqb.setAttribute("aria-label","분대 배치");
-    sqb.title="분대(대원) 심볼을 이 출동대 옆에 놓습니다";
+    sqb.className="sq"; sqb.setAttribute("aria-label","대원 배치");
+    sqb.title="대원 심볼을 이 출동대 옆에 놓습니다";
     sqb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7" r="4"/><path d="M12 6.2a5.4 5.4 0 0 0-5 3.3h10a5.4 5.4 0 0 0-5-3.3z" opacity="0"/><path d="M5 21v-2a7 7 0 0 1 14 0v2z"/><path d="M7 6.8a5 5 0 0 1 10 0z"/></svg>';
     sqb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
     sqb.addEventListener("click",function(e){ e.stopPropagation(); deploySquad(chip); });
@@ -3539,7 +3539,7 @@
     ciBody.appendChild(head);
     /* 1) 분대 · 대원 */
     var sec=ciEl("div","ciSec");
-    sec.appendChild(ciEl("div","ciLbl","분대 · 대원"));
+    sec.appendChild(ciEl("div","ciLbl","대원"));
     var crew=(chip.dataset.crew||"").trim();
     if(crew) sec.appendChild(ciLinkify(crew));
     else{
@@ -3617,7 +3617,7 @@
      평면도 말의 좌상단 배지(원터치) 또는 정보 카드의 "분대 배치" 버튼으로 생성 */
   function deploySquad(chip){
     var name=chip.dataset.name, pr=chipParse(name);
-    var team=(pr&&pr.suf==="구조")?"구조대":"분대";
+    var team=(pr&&pr.suf==="구조")?"구조대":"대원";
     var lbl=name+" "+team;
     var at;
     if(chip.parentElement===planLayer && chip.dataset.wx!=null){
@@ -3628,7 +3628,7 @@
     }
     var sq={type:"stamp", sym:"crew", at:at, t:lbl};
     strokes.push(sq);
-    log("분대 표시: "+lbl);
+    log("대원 표시: "+lbl);
     redraw(); scheduleSave();
     selectShape(sq);   /* 놓자마자 끌어서 위치 조정 */
   }
