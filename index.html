@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.60</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.61</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -5295,7 +5295,52 @@
   var lastPayload="", fbAuthed=false, fbQueue=[];
   var syncStatus="";   /* 공유 모달에 표시할 연결 상태 */
 
-  function fbReady(){ return !!(FB_CONFIG && typeof firebase!=="undefined"); }
+  function fbReady(){
+    return !!(FB_CONFIG && typeof firebase!=="undefined" && firebase.auth && firebase.firestore);
+  }
+  /* SDK 스크립트가 느린 회선에서 로드 실패했으면 동적으로 다시 불러온다(V2.61) */
+  var fbLoadTried=false;
+  function fbLoadScripts(){
+    if(fbLoadTried || typeof firebase!=="undefined") return;
+    fbLoadTried=true;
+    var urls=[
+      "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js",
+      "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js",
+      "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"
+    ];
+    (function next(i){
+      if(i>=urls.length) return;
+      var sc=document.createElement("script");
+      sc.src=urls[i];
+      sc.onload=function(){ next(i+1); };
+      sc.onerror=function(){ fbLoadTried=false; };   /* 다음 시도에서 재도전 */
+      document.head.appendChild(sc);
+    })(0);
+  }
+  /* 연결 준비(SDK+익명 인증)까지 최대 45초 대기 — 1초마다 진행 콜백, 5초마다 인증 재시도.
+     모바일 첫 접속·약한 전파에서 12초 제한으로 참여가 끊기던 문제 해결(V2.61) */
+  function fbConnect(onReady,onTick,onFail){
+    var t0=Date.now(), stop=false, lastKick=0;
+    function ready(){ if(!stop){ stop=true; onReady(); } }
+    function tick(){
+      if(stop) return;
+      var sec=Math.round((Date.now()-t0)/1000);
+      if(fbReady()){
+        fbInit();
+        if(fbAuthed){ ready(); return; }
+        if(sec-lastKick>=5){
+          lastKick=sec;
+          try{ firebase.auth().signInAnonymously().catch(function(){}); }catch(e){}
+        }
+      }else fbLoadScripts();
+      if(sec>=45){ stop=true; onFail&&onFail(sec); return; }
+      onTick&&onTick(sec);
+      setTimeout(tick,1000);
+    }
+    if(fbReady()){ fbInit(); whenAuthed(ready); }
+    setTimeout(tick,1000);
+    return function(){ stop=true; };
+  }
   function fbInit(){
     if(fdb || !fbReady()) return;
     firebase.initializeApp(FB_CONFIG);
@@ -5635,15 +5680,14 @@
   document.getElementById("syncClose").addEventListener("click",function(){ syncModal.hidden=true; });
   syncModal.addEventListener("pointerdown",function(e){ if(e.target===syncModal) syncModal.hidden=true; });
   document.getElementById("syncShare").addEventListener("click",function(){
-    if(!fbReady()) return;
     var m=boardMeta(); if(!m) return;
     var code=genCode();
     /* 서버에 기록이 끝난 뒤에 코드를 보여준다 — 코드만 보고 참여했다 실패하는 일 방지 */
     var shareBtn=document.getElementById("syncShare");
+    if(shareBtn.disabled) return;
     shareBtn.disabled=true; shareBtn.textContent="서버 연결 중…";
     function done(){ shareBtn.disabled=false; shareBtn.textContent="이 보드 공유하기"; }
-    fbInit();
-    whenAuthed(function(){
+    fbConnect(function(){
       var st=serialize(); delete st.ui; delete st.view;
       var s=JSON.stringify(st);
       fdb.collection("rooms").doc(code).set({s:s, by:deviceId, up:Date.now()})
@@ -5660,6 +5704,11 @@
           done();
           showSyncErr("공유 실패 — 네트워크를 확인하세요"+(e&&e.code?" ("+e.code+")":""));
         });
+    },function(sec){
+      shareBtn.textContent="서버 연결 중… "+sec+"초";
+    },function(sec){
+      done();
+      showSyncErr("연결하지 못했습니다("+sec+"초) — 신호가 잡히는 곳에서 다시 시도하세요");
     });
   });
   /* 현재 보드를 공유 연결 없는 독립 사본으로 저장 */
@@ -5727,13 +5776,11 @@
   }
   /* 참여 코드로 방 데이터를 받아 새 보드로 참여 (버튼·링크 공용) */
   function joinByCode(code, onErr, role){
-    fbInit();
-    if(!fbAuthed){ try{ firebase.auth().signInAnonymously().catch(function(){}); }catch(e){} }
     var jbDone=false;
-    setTimeout(function(){
-      if(!jbDone){ jbDone=true; onErr("응답이 늦습니다 — 네트워크를 확인하고 링크를 다시 열어보세요"); }
-    },12000);
-    whenAuthed(function(){
+    fbConnect(function(){
+      setTimeout(function(){
+        if(!jbDone){ jbDone=true; onErr("서버 응답이 없습니다 — 링크를 다시 열어보세요"); }
+      },15000);
       fdb.collection("rooms").doc(code).get().then(function(snap){
         if(jbDone) return; jbDone=true;
         if(!snap.exists){ onErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
@@ -5747,12 +5794,17 @@
         try{ localStorage.setItem(CURKEY, nb.id); }catch(e){}
         location.replace(location.pathname);   /* ?join= 제거하고 새 보드로 */
       }).catch(function(){ if(!jbDone){ jbDone=true; onErr("연결 실패 — 네트워크를 확인하세요"); } });
+    },function(sec){
+      showSyncOk("참여 링크로 연결 중… "+sec+"초 — 전파가 약하면 시간이 걸립니다 (최대 45초)");
+    },function(sec){
+      jbDone=true;
+      onErr("연결하지 못했습니다("+sec+"초) — 신호가 잡히는 곳에서 링크를 다시 열어보세요");
     });
   }
   /* 링크로 열었을 때(?join=코드) 자동 참여 — 이미 그 코드로 참여한 보드가 있으면 그 보드를 연다 */
   (function(){
     var m=location.search.match(/[?&]join=([A-Za-z0-9]{6})/);
-    if(!m||!fbReady()) return;
+    if(!m||!FB_CONFIG) return;
     var code=m[1].toUpperCase();
     var mode=/[?&]mode=view/.test(location.search)?"view":null;
     var existing=null;
@@ -5793,20 +5845,17 @@
   syncJoinBtn.addEventListener("click",function(){
     if(joinPending){ syncJoinBtn.disabled=true; syncJoinBtn.textContent="참여 중…"; commitJoin(joinPending); return; }
     if(syncJoinBtn.disabled) return;
-    if(!fbReady()){ showSyncErr("연결 모듈이 아직 준비되지 않았습니다 — 네트워크 확인 후 다시 시도하세요"); return; }
     var code=syncJoinIn.value.trim().toUpperCase();
     if(code.length!==6){ showSyncErr("6자리 코드를 입력하세요"); return; }
     syncJoinBtn.disabled=true; syncJoinBtn.textContent="확인 중…";
-    showSyncOk("서버에서 코드를 확인하는 중… (코드 "+code+")");
+    showSyncOk("서버에 연결하는 중… (코드 "+code+")");
     var done=false;
-    var to=setTimeout(function(){
-      if(done) return; done=true;
-      joinIdle(); showSyncErr("응답이 늦습니다 — 네트워크를 확인하고 다시 시도하세요");
-    },12000);
-    fbInit();
-    /* 앞선 익명 로그인 시도가 실패해 있으면 콜백이 영영 안 옴 — 다시 시도 */
-    if(!fbAuthed){ try{ firebase.auth().signInAnonymously().catch(function(){}); }catch(e){} }
-    whenAuthed(function(){
+    fbConnect(function(){
+      if(done) return;
+      var to=setTimeout(function(){
+        if(done) return; done=true;
+        joinIdle(); showSyncErr("서버 응답이 없습니다 — 잠시 후 다시 시도하세요");
+      },15000);
       fdb.collection("rooms").doc(code).get().then(function(snap){
         if(done) return; done=true; clearTimeout(to);
         if(!snap.exists){ joinIdle(); showSyncErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
@@ -5821,6 +5870,11 @@
         if(done) return; done=true; clearTimeout(to);
         joinIdle(); showSyncErr("연결 실패 — 네트워크를 확인하세요");
       });
+    },function(sec){
+      showSyncOk("서버에 연결하는 중… "+sec+"초 — 전파가 약하면 시간이 걸립니다 (최대 45초)");
+    },function(sec){
+      done=true;
+      joinIdle(); showSyncErr("연결하지 못했습니다("+sec+"초) — 신호가 잡히는 곳에서 다시 시도하세요");
     });
   });
   updateSyncUi();
