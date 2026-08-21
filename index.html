@@ -935,7 +935,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.51</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.52</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -4329,6 +4329,10 @@
   });
   function openAiKey(){
     aiLoadProvForm(aiProv());
+    /* 사진 선택 전 단계로 열렸으면 버튼·안내 문구를 다음 단계형으로 */
+    document.getElementById("aiKeySave").textContent=aiPendingPick?"저장 후 사진 선택":"저장";
+    if(aiPendingPick && aiEditProv!=="ocr" && aiKey(aiEditProv))
+      aiKeyShow('설정을 확인하고 "저장 후 사진 선택"을 누르세요.');
     aiKeyModal.hidden=false; aiKeyIn.focus();
   }
   document.getElementById("aiKeyBtn").addEventListener("click",openAiKey);
@@ -4357,8 +4361,8 @@
   aiKeyModal.addEventListener("pointerdown",function(e){ if(e.target===aiKeyModal){ aiKeyModal.hidden=true; aiPendingPick=false; } });
 
   document.getElementById("aiBtn").addEventListener("click",function(){
-    if(aiProv()!=="ocr" && !aiKey()){ aiPendingPick=true; openAiKey(); return; }
-    aiFile.value=""; aiFile.click();
+    /* 항상 API 설정(공급자·키 확인)부터 → 저장하면 사진 선택으로 진행 (V2.52) */
+    aiPendingPick=true; openAiKey();
   });
   aiRetry.addEventListener("click",function(){ aiFile.value=""; aiFile.click(); });
   document.getElementById("aiClose").addEventListener("click",function(){ aiModal.hidden=true; });
