@@ -428,6 +428,16 @@
   }
   .chip .x:active{background:var(--red); border-color:var(--red)}
   #laneList .laneBody .chip .x{display:none}
+  /* 분대 배치 배지: 평면도 말 좌상단 — 누르면 대원 심볼이 바로 옆에 생성 */
+  .chip .sq{
+    position:absolute; top:-7px; left:-5px; width:16px; height:16px;
+    display:none; align-items:center; justify-content:center; padding:0;
+    border-radius:50%; border:1px solid rgba(255,255,255,.4);
+    background:#D9821F; color:#fff; z-index:2;
+  }
+  .chip .sq svg{width:10px; height:10px; pointer-events:none}
+  .chip .sq:active{background:#F29A3C}
+  #planLayer .chip .sq{display:flex}
   #planLayer .chip.lift{position:absolute}
 
   /* ── 하단 트레이 (도크) ── */
@@ -880,7 +890,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.44</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.45</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -3248,6 +3258,14 @@
     lb.className="lb"+(key&&TYPE_ICONS[key] ? (name.length>=6?" small":"") : " solo");
     lb.textContent=name;
     chip.appendChild(lb);
+    /* 좌상단 분대 배지(평면도에서만 보임): 누르면 대원 심볼이 말 옆에 바로 생성 */
+    var sqb=document.createElement("button");
+    sqb.className="sq"; sqb.setAttribute("aria-label","분대 배치");
+    sqb.title="분대(대원) 심볼을 이 출동대 옆에 놓습니다";
+    sqb.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7" r="4"/><path d="M12 6.2a5.4 5.4 0 0 0-5 3.3h10a5.4 5.4 0 0 0-5-3.3z" opacity="0"/><path d="M5 21v-2a7 7 0 0 1 14 0v2z"/><path d="M7 6.8a5 5 0 0 1 10 0z"/></svg>';
+    sqb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+    sqb.addEventListener("click",function(e){ e.stopPropagation(); deploySquad(chip); });
+    chip.appendChild(sqb);
     /* 우상단 X: 트레이에선 즉시 삭제, 평면도에선 트레이로 회수 */
     var x=document.createElement("button");
     x.className="x"; x.textContent="×"; x.setAttribute("aria-label","삭제 또는 회수");
@@ -3595,16 +3613,15 @@
   }
   document.getElementById("ciClose").addEventListener("click",function(){ chipInfoModal.hidden=true; });
   chipInfoModal.addEventListener("pointerdown",function(e){ if(e.target===chipInfoModal) chipInfoModal.hidden=true; });
-  document.getElementById("ciSquad").addEventListener("click",function(){
-    /* 분대(대원) 심볼 배치 — 지휘통제보드 참고자료의 "펌프차 더블탭 → 분대 아이콘" 개념.
-       말이 평면도에 있으면 그 옆, 아니면 화면 중앙에 st-crew 스탬프(출동대명 분대 라벨) 생성 */
-    if(!infoChip) return;
-    var name=infoChip.dataset.name, pr=chipParse(name);
+  /* 분대(대원) 심볼 배치 — 지휘통제보드 참고자료의 "펌프차 → 분대 아이콘" 개념.
+     평면도 말의 좌상단 배지(원터치) 또는 정보 카드의 "분대 배치" 버튼으로 생성 */
+  function deploySquad(chip){
+    var name=chip.dataset.name, pr=chipParse(name);
     var team=(pr&&pr.suf==="구조")?"구조대":"분대";
     var lbl=name+" "+team;
     var at;
-    if(infoChip.parentElement===planLayer && infoChip.dataset.wx!=null){
-      at=[+infoChip.dataset.wx-46/view.s, +infoChip.dataset.wy-40/view.s];   /* 말 좌상단 옆 */
+    if(chip.parentElement===planLayer && chip.dataset.wx!=null){
+      at=[+chip.dataset.wx-46/view.s, +chip.dataset.wy-40/view.s];   /* 말 좌상단 옆 */
     }else{
       var r=wrap.getBoundingClientRect();
       at=s2w(r.width/2, r.height/2);
@@ -3612,9 +3629,13 @@
     var sq={type:"stamp", sym:"crew", at:at, t:lbl};
     strokes.push(sq);
     log("분대 표시: "+lbl);
-    chipInfoModal.hidden=true;
     redraw(); scheduleSave();
     selectShape(sq);   /* 놓자마자 끌어서 위치 조정 */
+  }
+  document.getElementById("ciSquad").addEventListener("click",function(){
+    if(!infoChip) return;
+    chipInfoModal.hidden=true;
+    deploySquad(infoChip);
   });
   document.getElementById("ciEdit").addEventListener("click",function(){
     chipInfoModal.hidden=true;
