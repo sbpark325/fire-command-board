@@ -890,7 +890,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.46</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.47</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1124,7 +1124,8 @@
       <p class="presetSub" id="syncState">이 보드는 아직 공유되지 않았습니다</p>
       <div id="syncCodeBox" hidden>
         <div class="syncCode" id="syncCode">------</div>
-        <p class="presetSub">다른 태블릿에서 "공유"를 열고 아래 칸에 이 코드를 입력하면 실시간으로 함께 봅니다</p>
+        <p class="presetSub">다른 태블릿에서 "공유"를 열고 아래 칸에 이 코드를 입력하거나, 아래 버튼으로 참여 링크를 보내세요 — 링크를 열면 바로 참여됩니다</p>
+        <button class="btn primary" id="syncKakao" style="width:100%">📤 카카오톡·메신저로 참여 링크 보내기</button>
       </div>
       <button class="btn primary" id="syncShare">이 보드 공유하기</button>
       <div class="syncJoinRow">
@@ -5056,6 +5057,55 @@
     if(m){ log("보드 공유 해제 (코드 "+m.share+")"); delete m.share; saveIndex(); }
     updateSyncUi();
   });
+  /* 카카오톡·메신저 공유: 참여 링크(?join=코드) — 기기 공유 시트(카카오톡 선택) 또는 클립보드 복사 */
+  document.getElementById("syncKakao").addEventListener("click",function(){
+    var code=shareCode(); if(!code) return;
+    var name=incidentEl.textContent.trim()||"현장지휘 보드";
+    var url="https://sbpark325.github.io/fire-command-board/?join="+code;
+    var text="[현장지휘 보드] "+name+"\n참여 코드: "+code+"\n링크를 열면 바로 참여됩니다:";
+    if(navigator.share){
+      navigator.share({title:"현장지휘 보드 — "+name, text:text, url:url}).catch(function(){});
+    }else if(navigator.clipboard){
+      navigator.clipboard.writeText(text+"\n"+url).then(function(){
+        showSyncOk("✓ 참여 링크를 복사했습니다 — 카카오톡 대화방에 붙여넣으세요");
+      }).catch(function(){ showSyncErr("복사 실패 — 코드를 직접 전달하세요: "+code); });
+    }else showSyncErr("이 브라우저는 공유를 지원하지 않습니다 — 코드를 직접 전달하세요: "+code);
+  });
+  /* 참여 코드로 방 데이터를 받아 새 보드로 참여 (버튼·링크 공용) */
+  function joinByCode(code, onErr){
+    fbInit();
+    whenAuthed(function(){
+      fdb.collection("rooms").doc(code).get().then(function(snap){
+        if(!snap.exists){ onErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
+        saveState();
+        var name="";
+        try{ name=(JSON.parse(snap.data().s).incident||"").trim(); }catch(e){}
+        var nb={id:genId(), name:name, created:Date.now(), updated:Date.now(), share:code};
+        try{ localStorage.setItem(boardKey(nb.id), snap.data().s); }catch(e){}
+        boardIndex.push(nb); saveIndex();
+        try{ localStorage.setItem(CURKEY, nb.id); }catch(e){}
+        location.replace(location.pathname);   /* ?join= 제거하고 새 보드로 */
+      }).catch(function(){ onErr("연결 실패 — 네트워크를 확인하세요"); });
+    });
+  }
+  /* 링크로 열었을 때(?join=코드) 자동 참여 — 이미 그 코드로 참여한 보드가 있으면 그 보드를 연다 */
+  (function(){
+    var m=location.search.match(/[?&]join=([A-Za-z0-9]{6})/);
+    if(!m||!fbReady()) return;
+    var code=m[1].toUpperCase();
+    var existing=null;
+    boardIndex.forEach(function(b){ if(b.share===code) existing=b; });
+    if(existing){
+      if(currentId!==existing.id){
+        try{ localStorage.setItem(CURKEY, existing.id); }catch(e){}
+        location.replace(location.pathname);
+      }
+      return;
+    }
+    syncModal.hidden=false;
+    showSyncOk("참여 링크 확인 중… (코드 "+code+")");
+    joinByCode(code, function(msg){ showSyncErr(msg); });
+  })();
   document.getElementById("syncJoin").addEventListener("click",function(){
     if(!fbReady()) return;
     var code=document.getElementById("syncJoinCode").value.trim().toUpperCase();
