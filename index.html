@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.56</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.57</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -5688,12 +5688,30 @@
   updateSyncUi();
   if(shareCode()) startSync();
 
-  /* ── PWA: 서비스워커 등록 (자체 호스팅에서만 — 아티팩트/파일 열기에선 조용히 건너뜀) ── */
+  /* ── PWA: 서비스워커 등록 + 자동 업데이트(V2.57) —
+     새 버전이 배포되면 감지 즉시 새 캐시로 새로고침한다. 기기마다 버전이 어긋나
+     "연동이 안 되는" 것처럼 보이는 문제 방지. 조작 중이면 끝난 뒤 새로고침. ── */
   if("serviceWorker" in navigator
      && location.protocol.indexOf("http")===0
      && !/claude\.ai$/.test(location.hostname)){
+    var swHadCtrl=!!navigator.serviceWorker.controller;
+    var swReloaded=false;
+    navigator.serviceWorker.addEventListener("controllerchange",function(){
+      if(!swHadCtrl || swReloaded) return;   /* 최초 설치는 새로고침 불필요 */
+      swReloaded=true;
+      var t=setInterval(function(){
+        if(drag||cur) return;                /* 말 이동·그리는 중엔 기다림 */
+        clearInterval(t); location.reload();
+      },800);
+    });
     window.addEventListener("load",function(){
-      navigator.serviceWorker.register("sw.js").catch(function(){});
+      navigator.serviceWorker.register("sw.js").then(function(reg){
+        try{ reg.update(); }catch(e){}
+        setInterval(function(){ try{ reg.update(); }catch(e){} }, 10*60*1000);
+        document.addEventListener("visibilitychange",function(){
+          if(!document.hidden){ try{ reg.update(); }catch(e){} }
+        });
+      }).catch(function(){});
     });
   }
 })();
