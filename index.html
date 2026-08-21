@@ -880,7 +880,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.43</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.44</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1031,6 +1031,7 @@
     <div class="chipActions">
       <button class="btn" id="ciContacts" title="연락처 JSON 파일을 이 기기에 불러옵니다">연락처 파일</button>
       <span class="grow"></span>
+      <button class="btn" id="ciSquad" title="이 출동대의 분대(대원) 심볼을 지도에 놓습니다">분대 배치</button>
       <button class="btn" id="ciEdit">말 편집</button>
       <button class="btn primary" id="ciClose">닫기</button>
     </div>
@@ -2205,11 +2206,12 @@
         ctx.beginPath(); ctx.arc(0,-6.2,5.4,Math.PI*1.05,Math.PI*1.95); ctx.fill(); /* 헬멧 */
         roundRectPath(-5.6,0.2, 11.2, 9, 4.4); ctx.fill();                 /* 몸통 */
       }
-      if(d.cap){
+      var capT=s.t||d.cap;   /* 분대 심볼은 출동대명 라벨(s.t) 우선 */
+      if(capT){
         ctx.font="800 11px sans-serif";
         ctx.lineWidth=3.2; ctx.strokeStyle="rgba(255,255,255,.92)"; ctx.lineJoin="round";
-        ctx.strokeText(d.cap, 0, 25);
-        ctx.fillStyle=d.c; ctx.fillText(d.cap, 0, 25);
+        ctx.strokeText(capT, 0, 25);
+        ctx.fillStyle=d.c; ctx.fillText(capT, 0, 25);
       }
     }else{
       ctx.font="800 13px sans-serif";
@@ -2615,7 +2617,12 @@
     }
     if(s.type==="stamp"){
       var d=STAMPS[s.sym];
-      if(d&&d.icon) return [s.at[0]-18*k, s.at[1]-18*k, s.at[0]+18*k, s.at[1]+31*k];
+      if(d&&d.icon){
+        var hw2=18;
+        var capT=s.t||d.cap;
+        if(capT) hw2=Math.max(18, capT.length*5.8+4);   /* 캡션(분대 라벨) 폭 반영 */
+        return [s.at[0]-hw2*k, s.at[1]-18*k, s.at[0]+hw2*k, s.at[1]+31*k];
+      }
       var hw=(d&&d.letter)?18*k:46*k;
       return [s.at[0]-hw, s.at[1]-16*k, s.at[0]+hw, s.at[1]+16*k];
     }
@@ -2647,7 +2654,7 @@
     var i=strokes.indexOf(s); if(i<0) return;
     strokes.splice(i,1);
     var nm;
-    if(s.type==="stamp") nm="평면도 표기 삭제: "+(SHAPE_NAMES["st-"+s.sym]||s.sym);
+    if(s.type==="stamp") nm="평면도 표기 삭제: "+(s.t||SHAPE_NAMES["st-"+s.sym]||s.sym);
     else if(s.type==="marker") nm="지도 마커 삭제: "+(s.t||"");
     else if(s.type==="note") nm="메모 삭제: "+(s.t||"").slice(0,20);
     else if(s.type==="img") nm="사진 삭제";
@@ -3588,6 +3595,27 @@
   }
   document.getElementById("ciClose").addEventListener("click",function(){ chipInfoModal.hidden=true; });
   chipInfoModal.addEventListener("pointerdown",function(e){ if(e.target===chipInfoModal) chipInfoModal.hidden=true; });
+  document.getElementById("ciSquad").addEventListener("click",function(){
+    /* 분대(대원) 심볼 배치 — 지휘통제보드 참고자료의 "펌프차 더블탭 → 분대 아이콘" 개념.
+       말이 평면도에 있으면 그 옆, 아니면 화면 중앙에 st-crew 스탬프(출동대명 분대 라벨) 생성 */
+    if(!infoChip) return;
+    var name=infoChip.dataset.name, pr=chipParse(name);
+    var team=(pr&&pr.suf==="구조")?"구조대":"분대";
+    var lbl=name+" "+team;
+    var at;
+    if(infoChip.parentElement===planLayer && infoChip.dataset.wx!=null){
+      at=[+infoChip.dataset.wx-46/view.s, +infoChip.dataset.wy-40/view.s];   /* 말 좌상단 옆 */
+    }else{
+      var r=wrap.getBoundingClientRect();
+      at=s2w(r.width/2, r.height/2);
+    }
+    var sq={type:"stamp", sym:"crew", at:at, t:lbl};
+    strokes.push(sq);
+    log("분대 표시: "+lbl);
+    chipInfoModal.hidden=true;
+    redraw(); scheduleSave();
+    selectShape(sq);   /* 놓자마자 끌어서 위치 조정 */
+  });
   document.getElementById("ciEdit").addEventListener("click",function(){
     chipInfoModal.hidden=true;
     if(infoChip) openChipEditor(infoChip);
