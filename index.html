@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.55</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.56</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -5275,6 +5275,124 @@
   }
   function shareCode(){ var m=boardMeta(); return (m&&m.share)||null; }
 
+  /* ── 3-way 병합(V2.56): 마지막 합의 상태(base) 대비 로컬·원격 변경을 항목 단위로 합침.
+     전체 덮어쓰기(LWW)는 동시 편집 시 상대 변경을 지웠다 — 이제는
+     · 필드/말/지도별: 로컬만 바뀜→로컬, 원격만 바뀜→원격, 양쪽→로컬 우선(삭제<수정)
+     · 기록 로그: 합집합(시각순) · 체크리스트/무전 카운트: 역할별 3-way ── */
+  var syncBaseObj=null;
+  try{ syncBaseObj=JSON.parse(localStorage.getItem("fireboard-syncbase-"+currentId)||"null"); }catch(e){}
+  function setSyncBase(st){
+    syncBaseObj=st;
+    try{ localStorage.setItem("fireboard-syncbase-"+currentId, JSON.stringify(st)); }catch(e){}
+  }
+  function js(v){ return JSON.stringify(v===undefined?null:v); }
+  function mergeChips(b,r,l){
+    var mb={},mr={},ml={};
+    function key(c){ return (c.m||0)+"|"+c.n; }
+    (b||[]).forEach(function(c){ mb[key(c)]=c; });
+    (r||[]).forEach(function(c){ mr[key(c)]=c; });
+    (l||[]).forEach(function(c){ ml[key(c)]=c; });
+    var seen={}, out=[];
+    function pick(k){
+      var jb=js(mb[k]), jr=js(mr[k]), jl=js(ml[k]);
+      if(jl===jb) return mr[k];          /* 로컬 무변경 → 원격 따름(원격 삭제 포함) */
+      if(jr===jb) return ml[k];          /* 원격 무변경 → 로컬 따름(로컬 삭제 포함) */
+      return ml[k]||mr[k];               /* 양쪽 변경 → 로컬 우선, 삭제보다 수정 유지 */
+    }
+    (r||[]).concat(l||[]).forEach(function(c){
+      var k=key(c); if(seen[k]) return; seen[k]=1;
+      var v=pick(k); if(v) out.push(v);
+    });
+    /* base에만 있고 양쪽 다 지운 항목은 자연 제외 */
+    return out;
+  }
+  function mergeStrokes(b,r,l){
+    b=b||[]; r=r||[]; l=l||[];
+    var bs={},rs={},ls={};
+    b.forEach(function(x){ bs[js(x)]=1; });
+    r.forEach(function(x){ rs[js(x)]=1; });
+    l.forEach(function(x){ ls[js(x)]=1; });
+    var out=[];
+    r.forEach(function(x){ var j=js(x); if(bs[j]&&!ls[j]) return; out.push(x); });   /* 로컬이 지운 것 제외 */
+    l.forEach(function(x){ var j=js(x); if(!rs[j]&&!bs[j]) out.push(x); });          /* 로컬 추가분 */
+    return out;
+  }
+  function mergeMaps(b,r,l){
+    b=b||[]; r=r||[]; l=l||[];
+    if(!r.length) return l;
+    if(!l.length) return r;
+    var n;
+    if(l.length!==b.length && r.length===b.length) n=l.length;
+    else if(r.length!==b.length && l.length===b.length) n=r.length;
+    else n=Math.max(r.length,l.length);
+    var out=[];
+    for(var i=0;i<n;i++){
+      var mb=b[i], mr=r[i], ml=l[i];
+      if(!mr&&ml){ out.push(ml); continue; }
+      if(!ml&&mr){ out.push(mr); continue; }
+      if(!mr&&!ml) continue;
+      var jb=js(mb||null);
+      if(js(ml)===jb){ out.push(mr); continue; }
+      if(js(mr)===jb){ out.push(ml); continue; }
+      out.push({
+        n: (mb&&ml.n!==mb.n)?ml.n:mr.n,
+        view: ml.view||mr.view,
+        geo: (js(ml.geo)!==js(mb?mb.geo:null))?ml.geo:mr.geo,
+        strokes: mergeStrokes(mb&&mb.strokes, mr.strokes, ml.strokes)
+      });
+    }
+    return out;
+  }
+  function mergeLogs(r,l){
+    var seen={}, out=[];
+    (r||[]).concat(l||[]).forEach(function(e){
+      var k=e.t+"|"+e.m; if(seen[k]) return; seen[k]=1; out.push(e);
+    });
+    out.sort(function(a,b){ return a.t<b.t?-1:a.t>b.t?1:0; });
+    return out;
+  }
+  function mergeByRole(b,r,l){
+    b=b||{}; r=r||{}; l=l||{};
+    var out={}, keys={};
+    Object.keys(r).concat(Object.keys(l)).forEach(function(k){ keys[k]=1; });
+    Object.keys(keys).forEach(function(k){
+      out[k]=(js(l[k])!==js(b[k]))?l[k]:r[k];
+      if(out[k]===undefined) delete out[k];
+    });
+    return out;
+  }
+  function mergeState(remote, local){
+    var base=syncBaseObj||{};
+    var out={};
+    Object.keys(remote).forEach(function(k){ out[k]=remote[k]; });
+    ["incident","lanes","prio","em"].forEach(function(f){
+      if(js(local[f])!==js(base[f])) out[f]=local[f];
+    });
+    out.chips=mergeChips(base.chips, remote.chips, local.chips);
+    out.maps=mergeMaps(base.maps, remote.maps, local.maps);
+    out.logs=mergeLogs(remote.logs, local.logs);
+    out.ckd=mergeByRole(base.ckd, remote.ckd, local.ckd);
+    out.rdc=mergeByRole(base.rdc, remote.rdc, local.rdc);
+    out.v=1; out.mi=local.mi;
+    /* 레거시 최상위 필드는 병합된 maps 기준으로 재계산 */
+    if(out.maps&&out.maps.length){
+      var i0=(out.mi<out.maps.length&&out.mi>=0)?out.mi:0;
+      out.strokes=out.maps[i0].strokes||[]; out.geo=out.maps[i0].geo||null;
+    }
+    return out;
+  }
+  function localSnapshot(){ var st=serialize(); delete st.ui; delete st.view; return st; }
+  /* 원격 수신: base가 있으면 로컬 미전송 변경을 지키며 병합, 없으면(첫 수신) 원격 그대로 */
+  function receiveRemote(st){
+    var merged=st;
+    if(syncBaseObj){
+      try{ merged=mergeState(st, localSnapshot()); }catch(e){ merged=st; }
+    }
+    applyRemote(merged);
+    setSyncBase(st);
+    if(!VIEWER && js(merged)!==js(st)) schedulePush();   /* 지켜낸 로컬 변경을 원격에도 반영 */
+  }
+
   /* 원격 상태를 화면에 반영 (리로드 없이 전체 재구성) */
   function applyRemote(st){
     syncApplying=true;
@@ -5322,7 +5440,7 @@
   function flushRemote(){
     if(pendingRemote && !drag && !cur){
       var st=pendingRemote; pendingRemote=null;
-      applyRemote(st);
+      receiveRemote(st);
     }
   }
 
@@ -5341,7 +5459,7 @@
         var st=null;
         try{ st=JSON.parse(d.s); }catch(e){ return; }
         if(drag||cur){ pendingRemote=st; return; }  /* 조작 중이면 끝나고 적용 */
-        applyRemote(st);
+        receiveRemote(st);
       }, function(err){
         syncStatus="연결 오류 ("+(err&&err.code||"네트워크")+") — 자동 재시도";
         refreshSyncStatus();
@@ -5356,15 +5474,24 @@
   }
   function pushSync(){
     var code=shareCode();
-    if(!code || !fbReady()) return;
+    if(!code || !fbReady() || VIEWER) return;
     fbInit();
     whenAuthed(function(){
-      var st=serialize();
-      delete st.ui; delete st.view;
-      var s=JSON.stringify(st);
-      if(s===lastPayload) return;
+      var curSt=localSnapshot();
+      /* base(마지막 합의 상태)를 기준으로 원격 최신본과 병합해 올린다 — 통째 덮어쓰기 금지 */
+      var out=curSt;
+      if(syncBaseObj && lastPayload){
+        try{ out=mergeState(JSON.parse(lastPayload), curSt); }catch(e){ out=curSt; }
+      }
+      var s=JSON.stringify(out);
+      if(s===lastPayload){ setSyncBase(out); return; }
       lastPayload=s;
       fdb.collection("rooms").doc(code).set({s:s, by:deviceId, up:Date.now()}).catch(function(){});
+      setSyncBase(out);
+      if(js(out)!==js(curSt)){
+        /* 원격에만 있던 변경이 병합됐으면 화면에도 반영 */
+        try{ applyRemote(out); }catch(e){}
+      }
     });
   }
 
@@ -5428,6 +5555,7 @@
           done();
           m.share=code; saveIndex();
           lastPayload=s;
+          setSyncBase(st);
           startSync();
           log("보드 공유 시작 (코드 "+code+")");
           updateSyncUi();
