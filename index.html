@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.61</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.62</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -2915,7 +2915,7 @@
     shapeXLayer.appendChild(box);
     var xb=document.createElement("button");
     xb.className="sx"; xb.textContent="×"; xb.setAttribute("aria-label","도형 삭제");
-    xb.style.left=x1+"px"; xb.style.top=y0+"px";
+    xb.style.left=(x1+14)+"px"; xb.style.top=(y0-14)+"px";   /* 박스 밖 대각선 — 핸들과 안 겹치게 */
     xb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
     xb.addEventListener("click",function(e){ e.stopPropagation(); deleteShape(s); });
     shapeXLayer.appendChild(xb);
@@ -2961,8 +2961,8 @@
       return h;
     }
     if(s.type==="rect"||s.type==="building"){
-      /* 꼭짓점 4개: 잡은 모서리를 끌면 맞은편 모서리는 고정 — 가로·세로 비율 자유 조절 (회전 상태 포함) */
-      [0,1,2,3].forEach(function(ci){
+      /* 꼭짓점 핸들: 우하단 1개만 — 삭제 ×(우상단)와 겹치지 않고 화면도 깔끔 (V2.62) */
+      [2].forEach(function(ci){
         mkHandle(function(){ return rectCorners()[ci]; }, function(){
           var opp=rectCorners()[(ci+2)%4];   /* 맞은편 꼭짓점(월드) 고정 */
           var rot=s.rot||0;
