@@ -610,6 +610,52 @@
   body.viewer #rdList, body.viewer .rdQuick{pointer-events:none; opacity:.8}
   body.viewer .laneBody:empty::after{content:"(보기 전용)"}
 
+  /* ── 활동 보고서 (V2.55) ── */
+  #reportModal{
+    position:fixed; inset:0; z-index:70; background:rgba(0,0,0,.6);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #reportModal[hidden]{display:none}
+  #reportWrap{
+    width:min(780px,96vw); max-height:92vh; display:flex; flex-direction:column;
+    background:var(--bg1); border:1px solid var(--edge-2); border-radius:14px; overflow:hidden;
+  }
+  #reportBar{display:flex; gap:8px; align-items:center; padding:10px 14px;
+    border-bottom:1px solid var(--edge)}
+  #reportBar h3{margin:0; font-size:14px; flex:1}
+  #reportBar .btn{white-space:nowrap}
+  #reportScroll{overflow-y:auto; padding:16px; background:#3a3d42; scrollbar-width:thin}
+  /* 보고서 본문: 인쇄를 전제로 한 밝은 종이 스타일 */
+  #reportPage{
+    background:#fff; color:#16181b; border-radius:4px; padding:30px 34px;
+    font-size:13px; line-height:1.55; box-shadow:0 4px 18px rgba(0,0,0,.45);
+  }
+  #reportPage h1{font-size:19px; margin:0 0 4px; letter-spacing:.02em}
+  #reportPage .rpSub{color:#666; font-size:11.5px; margin:0 0 14px}
+  #reportPage h4{
+    font-size:13.5px; margin:20px 0 7px; padding-bottom:4px;
+    border-bottom:2px solid #16181b;
+  }
+  /* quirks 모드에선 table이 색·글꼴을 상속하지 않아 명시 필요 */
+  #reportPage table{width:100%; border-collapse:collapse; font-size:12.5px; color:#16181b;
+    font-family:inherit; line-height:1.55}
+  #reportPage th,#reportPage td{border:1px solid #bbb; padding:4px 9px; text-align:left; vertical-align:top}
+  #reportPage th{background:#f0f0f0; font-weight:700; white-space:nowrap}
+  #reportPage .rpNone{color:#999; font-style:italic}
+  #reportPage .rpMap{width:100%; border:1px solid #ccc; border-radius:3px; margin:4px 0}
+  #reportPage ol,#reportPage ul{margin:4px 0; padding-left:22px}
+  #reportPage li{margin:2px 0}
+  #reportPage .rpPhase{font-weight:700; color:#444; margin:6px 0 2px; font-size:12px}
+  #reportPage .rpTime{white-space:nowrap; color:#555; font-variant-numeric:tabular-nums}
+  @media print{
+    body.printing > *:not(#reportModal){display:none !important}
+    body.printing #reportModal{position:static; background:#fff; display:block}
+    body.printing #reportWrap{width:auto; max-height:none; border:none; border-radius:0; background:#fff}
+    body.printing #reportBar{display:none}
+    body.printing #reportScroll{overflow:visible; padding:0; background:#fff}
+    body.printing #reportPage{box-shadow:none; border-radius:0; padding:0}
+  }
+
   /* ── 주소 검색 모달 ── */
   #searchModal{
     position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
@@ -960,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.54</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.55</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -971,6 +1017,7 @@
   <button class="tbtn" id="laneBtn" aria-expanded="false">상태</button>
   <button class="tbtn" id="ckBtn" aria-expanded="false">체크리스트</button>
   <button class="tbtn" id="rdBtn" aria-expanded="false">무전문</button>
+  <button class="tbtn" id="reportBtn" title="현재 보드 상태로 활동 보고서를 만듭니다">보고서</button>
   <button class="tbtn" id="logBtn" aria-expanded="true">기록 <span class="n" id="logCount">0</span></button>
 </header>
 <div id="modeConfirm" hidden>
@@ -1307,6 +1354,17 @@
       <button class="btn" id="aiKeyClose">닫기</button>
       <button class="btn primary" id="aiKeySave">저장</button>
     </div>
+  </div>
+</div>
+
+<div id="reportModal" hidden>
+  <div id="reportWrap">
+    <div id="reportBar">
+      <h3>활동 보고서</h3>
+      <button class="btn" id="reportPrint">🖨 인쇄 · PDF 저장</button>
+      <button class="btn primary" id="reportClose">닫기</button>
+    </div>
+    <div id="reportScroll"><div id="reportPage"></div></div>
   </div>
 </div>
 
@@ -4419,6 +4477,190 @@
   aiRetry.addEventListener("click",function(){ aiFile.value=""; aiFile.click(); });
   document.getElementById("aiClose").addEventListener("click",function(){ aiModal.hidden=true; });
   aiModal.addEventListener("pointerdown",function(e){ if(e.target===aiModal) aiModal.hidden=true; });
+
+  /* ── 활동 보고서 자동 생성(V2.55): 보드 전체 상태 → 인쇄용 문서 ── */
+  var reportModal=document.getElementById("reportModal");
+  var reportPage=document.getElementById("reportPage");
+  function rpEl(tag,cls,text,parent){
+    var e=document.createElement(tag);
+    if(cls) e.className=cls;
+    if(text!=null) e.textContent=text;
+    if(parent) parent.appendChild(e);
+    return e;
+  }
+  function rpChipLabel(c){
+    return c.dataset.name+(c.dataset.crew?" ("+c.dataset.crew+"명)":"");
+  }
+  function rpChipsOf(sel,mIdx){
+    var a=[];
+    document.querySelectorAll(sel).forEach(function(c){
+      if(+(c.dataset.mi||0)===mIdx) a.push(rpChipLabel(c));
+    });
+    return a;
+  }
+  function rpMapSnapshot(){
+    /* 현재 지도 탭의 캔버스 + 배치 말을 합성 (지도 타일은 CORS 허용이라 가능, 실패 시 생략) */
+    try{
+      var snap=document.createElement("canvas");
+      snap.width=cv.width; snap.height=cv.height;
+      var g=snap.getContext("2d");
+      g.fillStyle="#fff"; g.fillRect(0,0,snap.width,snap.height);
+      g.drawImage(cv,0,0);
+      var dpr=cv.width/(cv.getBoundingClientRect().width||cv.width);
+      planLayer.querySelectorAll(".chip").forEach(function(c){
+        if(+(c.dataset.mi||0)!==mi) return;
+        var x=(+c.dataset.wx*view.s+view.tx)*dpr, y=(+c.dataset.wy*view.s+view.ty)*dpr;
+        var t=c.dataset.name;
+        g.font="700 "+Math.round(11*dpr)+"px sans-serif";
+        var w=g.measureText(t).width+16*dpr, h=20*dpr, r=h/2;
+        g.beginPath();
+        g.moveTo(x-w/2+r,y-h/2); g.arcTo(x+w/2,y-h/2,x+w/2,y+h/2,r);
+        g.arcTo(x+w/2,y+h/2,x-w/2,y+h/2,r); g.arcTo(x-w/2,y+h/2,x-w/2,y-h/2,r);
+        g.arcTo(x-w/2,y-h/2,x+w/2,y-h/2,r); g.closePath();
+        g.fillStyle=getComputedStyle(c).backgroundColor||"#555"; g.fill();
+        g.lineWidth=1.5*dpr; g.strokeStyle="#fff"; g.stroke();
+        g.fillStyle="#fff"; g.textAlign="center"; g.textBaseline="middle";
+        g.fillText(t,x,y);
+      });
+      return snap.toDataURL("image/jpeg",0.85);
+    }catch(e){ return null; }
+  }
+  function buildReport(){
+    reportPage.textContent="";
+    var d=new Date(), pad2=function(n){return (n<10?"0":"")+n;};
+    var dt=d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())+" "+pad2(d.getHours())+":"+pad2(d.getMinutes());
+    rpEl("h1",null,"현장지휘 활동 보고서",reportPage);
+    rpEl("p","rpSub","현장지휘 보드 자동 생성 · 작성 "+dt,reportPage);
+
+    /* 1. 사건 개요 */
+    rpEl("h4",null,"1. 사건 개요",reportPage);
+    var mt=rpEl("table",null,null,reportPage);
+    function mrow(k,v){
+      var tr=rpEl("tr",null,null,mt);
+      rpEl("th",null,k,tr); rpEl("td",null,v||"—",tr);
+    }
+    mrow("사건명", incidentEl.textContent.trim());
+    mrow("작성 일시", dt);
+    if(emState) mrow("비상 발령", emState.t+" ("+emState.at+" 발령)");
+    var m0=boardMeta();
+    if(m0&&m0.share) mrow("공유 코드", m0.share+(VIEWER?" (이 기기: 보기 전용)":""));
+    mrow("지도 탭", maps.map(function(m,i){return (m.n||"지도 "+(i+1));}).join(", "));
+
+    /* 2. 지도 현황 (현재 탭 스냅샷) */
+    rpEl("h4",null,"2. 지도 현황 — "+((maps[mi]&&maps[mi].n)||"지도"),reportPage);
+    var snap=rpMapSnapshot();
+    if(snap){
+      var img=rpEl("img","rpMap",null,reportPage); img.src=snap;
+      if(maps.length>1) rpEl("p","rpSub","※ 현재 보고 있는 지도 탭만 이미지로 포함됩니다.",reportPage);
+    }else rpEl("p","rpNone","지도 이미지를 만들 수 없습니다 (브라우저 보안 제한)",reportPage);
+
+    /* 3. 출동대 현황 */
+    rpEl("h4",null,"3. 출동대 현황",reportPage);
+    var ct=rpEl("table",null,null,reportPage);
+    var hr=rpEl("tr",null,null,ct);
+    ["지도","구역","출동대"].forEach(function(h){ rpEl("th",null,h,hr); });
+    var anyChip=false;
+    maps.forEach(function(m,mIdx){
+      var rows=[];
+      var plan=rpChipsOf("#planLayer .chip",mIdx);
+      if(plan.length) rows.push(["지도 배치",plan.join(", ")]);
+      Array.prototype.forEach.call(laneList.children,function(l){
+        var name=l.querySelector(".laneBody").dataset.lane||"";
+        var arr=[];
+        l.querySelectorAll(".chip").forEach(function(c){
+          if(+(c.dataset.mi||0)===mIdx) arr.push(rpChipLabel(c));
+        });
+        if(arr.length) rows.push([name,arr.join(", ")]);
+      });
+      var trayArr=rpChipsOf("#tray .chip",mIdx);
+      if(trayArr.length) rows.push(["미배치",trayArr.join(", ")]);
+      rows.forEach(function(r,i){
+        anyChip=true;
+        var tr=rpEl("tr",null,null,ct);
+        if(i===0){
+          var td0=rpEl("td",null,(m.n||"지도 "+(mIdx+1)),tr);
+          td0.rowSpan=rows.length; td0.style.whiteSpace="nowrap"; td0.style.fontWeight="700";
+        }
+        rpEl("td",null,r[0],tr); rpEl("td",null,r[1],tr);
+      });
+    });
+    if(!anyChip){ ct.remove(); rpEl("p","rpNone","등록된 출동대가 없습니다",reportPage); }
+
+    /* 4. 우선순위 지시 */
+    rpEl("h4",null,"4. 우선순위 지시",reportPage);
+    var prio=Array.prototype.map.call(prioListEl.querySelectorAll("li>div"),
+      function(dv){ return dv.textContent.trim(); }).filter(Boolean);
+    if(prio.length){
+      var ol=rpEl("ol",null,null,reportPage);
+      prio.forEach(function(t){ rpEl("li",null,t,ol); });
+    }else rpEl("p","rpNone","입력된 지시가 없습니다",reportPage);
+
+    /* 5. 체크리스트 진행 */
+    rpEl("h4",null,"5. 체크리스트 진행 (완료 항목)",reportPage);
+    var anyCk=false;
+    CHECKLISTS.forEach(function(role){
+      var st=ckState[role.id]||{}, flat=0, done=0, total=0, buf=[];
+      role.phases.forEach(function(ph){
+        var got=[];
+        ph.items.forEach(function(it){
+          if(st[flat]){ got.push(it); done++; }
+          total++; flat++;
+        });
+        if(got.length) buf.push({t:ph.t, items:got});
+      });
+      if(!done) return;
+      anyCk=true;
+      rpEl("p","rpPhase",role.name+" — "+done+"/"+total+" 완료",reportPage);
+      buf.forEach(function(b){
+        var ul=rpEl("ul",null,null,reportPage);
+        b.items.forEach(function(it){ rpEl("li",null,"["+b.t+"] "+it,ul); });
+      });
+    });
+    if(!anyCk) rpEl("p","rpNone","완료된 항목이 없습니다",reportPage);
+
+    /* 6. 무전문 송신 */
+    rpEl("h4",null,"6. 무전문 송신",reportPage);
+    var anyRd=false;
+    RADIOS.forEach(function(role){
+      var st=rdState[role.id]||{}, flat=0, buf=[];
+      role.phases.forEach(function(ph){
+        ph.items.forEach(function(it){
+          if(st[flat]) buf.push({n:st[flat], t:it});
+          flat++;
+        });
+      });
+      if(!buf.length) return;
+      anyRd=true;
+      rpEl("p","rpPhase",role.name,reportPage);
+      var ul=rpEl("ul",null,null,reportPage);
+      buf.forEach(function(b){ rpEl("li",null,"("+b.n+"회) "+b.t,ul); });
+    });
+    if(!anyRd) rpEl("p","rpNone","송신 기록이 없습니다",reportPage);
+
+    /* 7. 활동 기록 */
+    rpEl("h4",null,"7. 활동 기록 ("+logData.length+"건)",reportPage);
+    if(logData.length){
+      var lt=rpEl("table",null,null,reportPage);
+      var lh=rpEl("tr",null,null,lt);
+      rpEl("th",null,"시각",lh); rpEl("th",null,"내용",lh);
+      logData.forEach(function(e){
+        var tr=rpEl("tr",null,null,lt);
+        rpEl("td","rpTime",e.t,tr); rpEl("td",null,e.m,tr);
+      });
+    }else rpEl("p","rpNone","기록이 없습니다",reportPage);
+  }
+  document.getElementById("reportBtn").addEventListener("click",function(){
+    buildReport();
+    reportModal.hidden=false;
+    log("활동 보고서 생성");
+  });
+  document.getElementById("reportClose").addEventListener("click",function(){ reportModal.hidden=true; });
+  reportModal.addEventListener("pointerdown",function(e){ if(e.target===reportModal) reportModal.hidden=true; });
+  document.getElementById("reportPrint").addEventListener("click",function(){
+    document.body.classList.add("printing");
+    window.print();
+  });
+  window.addEventListener("afterprint",function(){ document.body.classList.remove("printing"); });
 
   /* 이미지 → 긴 변 2400px JPEG base64 (글자 판독을 위해 해상도는 넉넉히) */
   function aiPrepImage(file){
