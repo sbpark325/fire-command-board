@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.58</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.59</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -5708,8 +5708,14 @@
   /* 참여 코드로 방 데이터를 받아 새 보드로 참여 (버튼·링크 공용) */
   function joinByCode(code, onErr, role){
     fbInit();
+    if(!fbAuthed){ try{ firebase.auth().signInAnonymously().catch(function(){}); }catch(e){} }
+    var jbDone=false;
+    setTimeout(function(){
+      if(!jbDone){ jbDone=true; onErr("응답이 늦습니다 — 네트워크를 확인하고 링크를 다시 열어보세요"); }
+    },12000);
     whenAuthed(function(){
       fdb.collection("rooms").doc(code).get().then(function(snap){
+        if(jbDone) return; jbDone=true;
         if(!snap.exists){ onErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
         saveState();
         var name="";
@@ -5720,7 +5726,7 @@
         boardIndex.push(nb); saveIndex();
         try{ localStorage.setItem(CURKEY, nb.id); }catch(e){}
         location.replace(location.pathname);   /* ?join= 제거하고 새 보드로 */
-      }).catch(function(){ onErr("연결 실패 — 네트워크를 확인하세요"); });
+      }).catch(function(){ if(!jbDone){ jbDone=true; onErr("연결 실패 — 네트워크를 확인하세요"); } });
     });
   }
   /* 링크로 열었을 때(?join=코드) 자동 참여 — 이미 그 코드로 참여한 보드가 있으면 그 보드를 연다 */
@@ -5742,23 +5748,59 @@
     showSyncOk("참여 링크 확인 중… (코드 "+code+")");
     joinByCode(code, function(msg){ showSyncErr(msg); }, mode);
   })();
-  document.getElementById("syncJoin").addEventListener("click",function(){
-    if(!fbReady()) return;
-    var code=document.getElementById("syncJoinCode").value.trim().toUpperCase();
+  /* ── 참여 2단계(V2.59): [참여]→서버 확인(진행 표시·12초 제한)→보드명 보여주고 [참여 확정].
+     기존엔 인증 지연·실패 시 아무 반응이 없어 "씹힘" — 이제 모든 경로에 피드백 ── */
+  var syncJoinBtn=document.getElementById("syncJoin");
+  var syncJoinIn=document.getElementById("syncJoinCode");
+  var joinPending=null;
+  function joinIdle(){
+    joinPending=null;
+    syncJoinBtn.disabled=false;
+    syncJoinBtn.classList.remove("primary");
+    syncJoinBtn.textContent="참여";
+  }
+  function commitJoin(j){
+    saveState();
+    var nb={id:genId(), name:j.name, created:Date.now(), updated:Date.now(), share:j.code};
+    try{ localStorage.setItem(boardKey(nb.id), j.s); }catch(e){}
+    boardIndex.push(nb); saveIndex();
+    try{ localStorage.setItem(CURKEY, nb.id); }catch(e){}
+    location.reload();
+  }
+  syncJoinIn.addEventListener("input",function(){
+    if(joinPending){ joinIdle(); syncErr.hidden=true; }
+  });
+  syncJoinBtn.addEventListener("click",function(){
+    if(joinPending){ syncJoinBtn.disabled=true; syncJoinBtn.textContent="참여 중…"; commitJoin(joinPending); return; }
+    if(syncJoinBtn.disabled) return;
+    if(!fbReady()){ showSyncErr("연결 모듈이 아직 준비되지 않았습니다 — 네트워크 확인 후 다시 시도하세요"); return; }
+    var code=syncJoinIn.value.trim().toUpperCase();
     if(code.length!==6){ showSyncErr("6자리 코드를 입력하세요"); return; }
+    syncJoinBtn.disabled=true; syncJoinBtn.textContent="확인 중…";
+    showSyncOk("서버에서 코드를 확인하는 중… (코드 "+code+")");
+    var done=false;
+    var to=setTimeout(function(){
+      if(done) return; done=true;
+      joinIdle(); showSyncErr("응답이 늦습니다 — 네트워크를 확인하고 다시 시도하세요");
+    },12000);
     fbInit();
+    /* 앞선 익명 로그인 시도가 실패해 있으면 콜백이 영영 안 옴 — 다시 시도 */
+    if(!fbAuthed){ try{ firebase.auth().signInAnonymously().catch(function(){}); }catch(e){} }
     whenAuthed(function(){
       fdb.collection("rooms").doc(code).get().then(function(snap){
-        if(!snap.exists){ showSyncErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
-        saveState();
+        if(done) return; done=true; clearTimeout(to);
+        if(!snap.exists){ joinIdle(); showSyncErr("코드를 찾을 수 없습니다. 코드를 확인하세요."); return; }
         var name="";
         try{ name=(JSON.parse(snap.data().s).incident||"").trim(); }catch(e){}
-        var nb={id:genId(), name:name, created:Date.now(), updated:Date.now(), share:code};
-        try{ localStorage.setItem(boardKey(nb.id), snap.data().s); }catch(e){}
-        boardIndex.push(nb); saveIndex();
-        try{ localStorage.setItem(CURKEY, nb.id); }catch(e){}
-        location.reload();
-      }).catch(function(){ showSyncErr("연결 실패 — 네트워크를 확인하세요"); });
+        joinPending={code:code, s:snap.data().s, name:name};
+        syncJoinBtn.disabled=false;
+        syncJoinBtn.classList.add("primary");
+        syncJoinBtn.textContent="참여 확정";
+        showSyncOk("\u2713 '"+(name||"이름 없는 보드")+"' 보드를 찾았습니다 — [참여 확정]을 누르면 참여합니다");
+      }).catch(function(){
+        if(done) return; done=true; clearTimeout(to);
+        joinIdle(); showSyncErr("연결 실패 — 네트워크를 확인하세요");
+      });
     });
   });
   updateSyncUi();
