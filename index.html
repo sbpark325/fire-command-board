@@ -579,20 +579,26 @@
   #syncStop:active{color:#FF7A64}
   /* ── 보기 전용(뷰어) 모드: 편집 UI 잠금 — 화면·동기화 수신은 그대로 ── */
   #viewerBadge{
-    display:none; align-items:center; gap:6px;
-    position:fixed; top:calc(var(--topH) + 10px); left:50%; transform:translateX(-50%);
-    z-index:34;
-    background:rgba(38,30,12,.92); border:1.5px solid var(--amber); color:var(--amber);
-    border-radius:99px; padding:7px 18px; font-size:13.5px; font-weight:800; white-space:nowrap;
-    box-shadow:0 3px 10px rgba(0,0,0,.4); backdrop-filter:blur(3px);
+    display:none; align-items:center; gap:5px; flex:0 0 auto;
+    background:rgba(255,178,36,.14); border:1.5px solid var(--amber); color:var(--amber);
+    border-radius:99px; padding:5px 14px; font-size:12.5px; font-weight:800; white-space:nowrap;
+    cursor:pointer; touch-action:manipulation;
   }
   #viewerBadge.on{display:inline-flex}
-  #viewerBadge{cursor:pointer; touch-action:manipulation}
   #viewerBadge.editMode{
-    background:rgba(14,22,40,.92); border-color:rgba(78,134,232,.65); color:#7FA8EE;
+    background:rgba(78,134,232,.12); border-color:rgba(78,134,232,.6); color:#7FA8EE;
   }
-  #viewerBadge.arm{background:rgba(255,178,36,.28); box-shadow:0 0 0 2px rgba(255,178,36,.35)}
-  #viewerBadge.editMode.arm{background:rgba(78,134,232,.26); box-shadow:0 0 0 2px rgba(78,134,232,.4)}
+  /* 모드 전환 확인 다이얼로그 */
+  #modeConfirm{
+    position:fixed; top:calc(var(--topH) + 12px); left:50%; transform:translateX(-50%);
+    z-index:60; display:flex; flex-direction:column; gap:12px; min-width:240px;
+    background:var(--bg1); border:1px solid var(--edge-2); border-radius:12px;
+    padding:15px 17px; box-shadow:0 8px 26px rgba(0,0,0,.5);
+  }
+  #modeConfirm[hidden]{display:none}
+  #modeConfirm .mcT{font-size:13.5px; font-weight:700; color:var(--ink-hi)}
+  #modeConfirm .mcBtns{display:flex; gap:8px}
+  #modeConfirm .mcBtns .btn{flex:1}
   body.viewer .tools button:not([data-tool="pan"]),
   body.viewer #addChip, body.viewer #presetBtn, body.viewer #aiBtn,
   body.viewer .chip .x, body.viewer .chip .sq,
@@ -929,8 +935,9 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.50</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.51</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
+  <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
   <button class="tbtn" id="syncBtn" aria-expanded="false">공유</button>
@@ -941,7 +948,13 @@
   <button class="tbtn" id="rdBtn" aria-expanded="false">무전문</button>
   <button class="tbtn" id="logBtn" aria-expanded="true">기록 <span class="n" id="logCount">0</span></button>
 </header>
-<span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환 (한 번 더 탭하면 확정)"></span>
+<div id="modeConfirm" hidden>
+  <div class="mcT" id="modeConfirmT"></div>
+  <div class="mcBtns">
+    <button class="btn" id="modeConfirmNo">아니오</button>
+    <button class="btn primary" id="modeConfirmYes">예</button>
+  </div>
+</div>
 
 <div class="mid">
 <main class="stage">
@@ -5150,24 +5163,21 @@
     location.reload();
   }
   document.getElementById("syncModeToggle").addEventListener("click",doModeToggle);
-  /* 상단 모드 배지: 공유 중이면 상시 표시 — 탭하면 확정 대기, 한 번 더 탭하면 전환(V2.50) */
-  var modeBadge=document.getElementById("viewerBadge"), modeBadgeTimer=null;
-  function modeBadgeIdle(){
-    modeBadge.classList.remove("arm");
+  /* 상단 모드 배지: 공유 중이면 상시 표시(상단바 사건명 옆) — 탭하면 예/아니오 확인 후 전환(V2.51) */
+  var modeBadge=document.getElementById("viewerBadge");
+  var modeConfirm=document.getElementById("modeConfirm");
+  function updateModeBadge(){
+    modeBadge.classList.toggle("on",!!shareCode());
+    modeBadge.classList.toggle("editMode",!VIEWER);
     modeBadge.textContent=VIEWER?"👁 보기 전용":"✏️ 편집";
   }
-  function updateModeBadge(){
-    var on=!!shareCode();
-    modeBadge.classList.toggle("on",on);
-    modeBadge.classList.toggle("editMode",!VIEWER);
-    if(on) modeBadgeIdle();
-  }
   modeBadge.addEventListener("click",function(){
-    if(modeBadge.classList.contains("arm")){ clearTimeout(modeBadgeTimer); doModeToggle(); return; }
-    modeBadge.classList.add("arm");
-    modeBadge.textContent=VIEWER?"✏️ 편집 모드로? 한 번 더":"👁 보기 전용으로? 한 번 더";
-    modeBadgeTimer=setTimeout(modeBadgeIdle,2600);
+    document.getElementById("modeConfirmT").textContent=
+      VIEWER?"편집 모드로 전환하시겠습니까?":"보기 전용으로 전환하시겠습니까?";
+    modeConfirm.hidden=false;
   });
+  document.getElementById("modeConfirmYes").addEventListener("click",doModeToggle);
+  document.getElementById("modeConfirmNo").addEventListener("click",function(){ modeConfirm.hidden=true; });
   document.getElementById("syncStop").addEventListener("click",function(){
     if(syncUnsub){ syncUnsub(); syncUnsub=null; }
     var m=boardMeta();
