@@ -1006,7 +1006,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.57</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.58</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -1650,7 +1650,7 @@
   try{ SAVED=JSON.parse(localStorage.getItem(boardKey(currentId))||"null"); }catch(e){}
 
   var saveTimer=null;
-  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveState,400); }
+  function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveState,120); }   /* V2.58: 400→120ms — 공유 반영 체감 지연 축소 */
   /* 보기 전용(뷰어) 모드: 보드 메타 role==="view" — 편집 UI 잠금 + 원격 push 차단(수신만) */
   var VIEWER=(function(){
     for(var i=0;i<boardIndex.length;i++)
@@ -2607,7 +2607,7 @@
         if(d<bestD){ bestD=d; best=i; }
       }
     });
-    if(best>-1){ strokes.splice(best,1); log("펜 획 삭제"); redraw(); rebuildShapeX(); scheduleSave(); }
+    if(best>-1){ markDeleted([strokes[best]]); strokes.splice(best,1); log("펜 획 삭제"); redraw(); rebuildShapeX(); scheduleSave(); }
   }
 
   /* 메모(말풍선) 입력 모달 */
@@ -2849,6 +2849,7 @@
   }
   function deleteShape(s){
     var i=strokes.indexOf(s); if(i<0) return;
+    markDeleted([s]);
     strokes.splice(i,1);
     var nm;
     if(s.type==="stamp") nm="평면도 표기 삭제: "+(s.t||SHAPE_NAMES["st-"+s.sym]||s.sym);
@@ -3304,7 +3305,7 @@
 
   /* 되돌리기 */
   document.getElementById("undoBtn").addEventListener("click",function(){
-    if(strokes.length){ strokes.pop(); redraw(); rebuildShapeX(); scheduleSave(); }
+    if(strokes.length){ markDeleted([strokes[strokes.length-1]]); strokes.pop(); redraw(); rebuildShapeX(); scheduleSave(); }
   });
 
   /* ── 지도 탭 UI: 전환·추가·이름변경(더블탭)·삭제(× 두 번) ── */
@@ -3392,10 +3393,30 @@
   }
   renderMapTabs();
 
+  /* ── 삭제 기록(V2.58): 지운 선을 다른 기기의 늦은 푸시가 되살리지 않도록
+     지도별 del{해시:삭제시각}을 남긴다. 병합 시 합집합 → 해시가 있으면 제외 ── */
+  function strokeHash(x){
+    var t=JSON.stringify(x), h=5381, i;
+    for(i=0;i<t.length;i++) h=((h<<5)+h+t.charCodeAt(i))|0;
+    return "h"+(h>>>0).toString(36);
+  }
+  function markDeleted(list){
+    if(!maps[mi]) return;
+    var del=maps[mi].del||(maps[mi].del={});
+    var now=Date.now();
+    list.forEach(function(x){ del[strokeHash(x)]=now; });
+    var ks=Object.keys(del);
+    if(ks.length>800){
+      ks.sort(function(a,b){ return del[a]-del[b]; })
+        .slice(0, ks.length-800).forEach(function(k){ delete del[k]; });
+    }
+  }
+
   /* 전체 지우기: 두 번 눌러 확정 */
   var clearBtn=document.getElementById("clearBtn"), clearTimer=null;
   clearBtn.addEventListener("click",function(){
     if(clearBtn.classList.contains("arm")){
+      markDeleted(strokes.slice());
       strokes.length=0; redraw(); rebuildShapeX(); log("평면도 전체 지움: "+(maps[mi].n||"지도"));
       clearBtn.classList.remove("arm"); clearBtn.textContent="전체 지우기";
       clearTimeout(clearTimer);
@@ -3469,6 +3490,7 @@
       log(chip.dataset.name+": 평면도 → 미배치");
     }else{
       log("말 삭제: "+chip.dataset.name+" ("+chipZone(chip)+")");
+      chipDel[(+(chip.dataset.mi||0))+"|"+chip.dataset.name]=Date.now();
       chip.remove();
     }
     refreshCounts();
@@ -3477,6 +3499,7 @@
   function createChip(name,color){
     var chip=document.createElement("div");
     chip.className="chip "+color; chip.dataset.name=name;
+    chip.dataset.ts=Date.now();   /* 마지막 변경 시각 — 병합 시 시간 순 우선(V2.58) */
     chip.dataset.mi=mi;   /* 말은 만들어진 지도 탭 소속 — 탭마다 출동대 구성이 독립(V2.40) */
     renderChipLabel(chip,name);
     chip.addEventListener("pointerdown",dragStart);
@@ -3493,6 +3516,7 @@
     }else{
       tray.appendChild(chip);
     }
+    if(d.t) chip.dataset.ts=d.t;   /* 복원 시엔 저장된 변경 시각 유지 */
     chipApplyVis(chip);
   }
   if(SAVED&&SAVED.chips){ SAVED.chips.forEach(addChipFromData); }
@@ -3504,6 +3528,7 @@
     return b ? b.dataset.lane : "?";
   }
   function placeInFlow(chip, body){
+    chip.dataset.ts=Date.now();
     chip.style.left=""; chip.style.top=""; chip.style.transform="";
     delete chip.dataset.wx; delete chip.dataset.wy;
     body.appendChild(chip);
@@ -3518,6 +3543,7 @@
     refreshCounts();
   }
   function placeOnPlan(chip, wx, wy, m){
+    chip.dataset.ts=Date.now();
     chip.dataset.wx=wx; chip.dataset.wy=wy;
     chip.dataset.mi=(m==null?mi:m);   /* 어느 지도 탭에 놓였는지 */
     chip.style.transform="";
@@ -3534,6 +3560,8 @@
   }
 
   /* ── 칩 드래그 (탭=편집, 더블탭=출동대 정보) ── */
+  var shapeMan=false;   /* 도형 핸들 조작 중 — 원격 반영 보류 가드(V2.58) */
+  var chipDel={};       /* 삭제한 말 기록 {지도|이름: 삭제시각} — 늦은 푸시의 복원 방지(V2.58) */
   var drag=null;
   var tapLast={}, tapTimer=null;
   function dragStart(e){
@@ -5092,6 +5120,7 @@
     var chips=[];
     function push(c,extra){
       var d={n:c.dataset.name, c:chipColor(c)};
+      if(c.dataset.ts) d.t=+c.dataset.ts;
       if(c.dataset.crew) d.w=c.dataset.crew;
       for(var k in extra) d[k]=extra[k];
       chips.push(d);
@@ -5117,7 +5146,7 @@
     return {
       v:1, incident:incidentEl.textContent, view:view, strokes:strokes, geo:geo,
       maps:maps, mi:mi,
-      lanes:lanes, chips:chips, prio:prio, logs:logData, ckd:ckd, rdc:rdState, em:emState,
+      lanes:lanes, chips:chips, cdel:chipDel, prio:prio, logs:logData, ckd:ckd, rdc:rdState, em:emState,
       ui:{ prio:cardUi(panels.prio.panel), lane:cardUi(panels.lane.panel),
            ck:cardUi(panels.ck.panel), rd:cardUi(panels.rd.panel), log:cardUi(logCard),
            wa:parseFloat(sideA.style.flexBasis)||0,
@@ -5286,7 +5315,13 @@
     try{ localStorage.setItem("fireboard-syncbase-"+currentId, JSON.stringify(st)); }catch(e){}
   }
   function js(v){ return JSON.stringify(v===undefined?null:v); }
-  function mergeChips(b,r,l){
+  function unionDel(a,b){
+    var o={},k;
+    for(k in (a||{})) o[k]=a[k];
+    for(k in (b||{})) if(!(k in o)||b[k]>o[k]) o[k]=b[k];
+    return o;
+  }
+  function mergeChips(b,r,l,cdel){
     var mb={},mr={},ml={};
     function key(c){ return (c.m||0)+"|"+c.n; }
     (b||[]).forEach(function(c){ mb[key(c)]=c; });
@@ -5297,14 +5332,21 @@
       var jb=js(mb[k]), jr=js(mr[k]), jl=js(ml[k]);
       if(jl===jb) return mr[k];          /* 로컬 무변경 → 원격 따름(원격 삭제 포함) */
       if(jr===jb) return ml[k];          /* 원격 무변경 → 로컬 따름(로컬 삭제 포함) */
-      return ml[k]||mr[k];               /* 양쪽 변경 → 로컬 우선, 삭제보다 수정 유지 */
+      var lv=ml[k], rv=mr[k];
+      if(lv&&rv) return ((rv.t||0)>(lv.t||0))?rv:lv;   /* 양쪽 변경 → 나중 변경(시간 순) 우선 */
+      return lv||rv;
     }
     (r||[]).concat(l||[]).forEach(function(c){
       var k=key(c); if(seen[k]) return; seen[k]=1;
-      var v=pick(k); if(v) out.push(v);
+      var v=pick(k); if(!v) return;
+      if(cdel && cdel[k] && cdel[k]>(v.t||0)) return;  /* 삭제가 더 나중이면 제외 */
+      out.push(v);
     });
-    /* base에만 있고 양쪽 다 지운 항목은 자연 제외 */
     return out;
+  }
+  function delFilter(arr,del){
+    if(!del) return arr||[];
+    return (arr||[]).filter(function(x){ return !(strokeHash(x) in del); });
   }
   function mergeStrokes(b,r,l){
     b=b||[]; r=r||[]; l=l||[];
@@ -5328,18 +5370,25 @@
     var out=[];
     for(var i=0;i<n;i++){
       var mb=b[i], mr=r[i], ml=l[i];
-      if(!mr&&ml){ out.push(ml); continue; }
-      if(!ml&&mr){ out.push(mr); continue; }
       if(!mr&&!ml) continue;
-      var jb=js(mb||null);
-      if(js(ml)===jb){ out.push(mr); continue; }
-      if(js(mr)===jb){ out.push(ml); continue; }
-      out.push({
-        n: (mb&&ml.n!==mb.n)?ml.n:mr.n,
-        view: ml.view||mr.view,
-        geo: (js(ml.geo)!==js(mb?mb.geo:null))?ml.geo:mr.geo,
-        strokes: mergeStrokes(mb&&mb.strokes, mr.strokes, ml.strokes)
-      });
+      var del=unionDel(ml&&ml.del, mr&&mr.del);
+      var src;
+      if(!mr) src=ml;
+      else if(!ml) src=mr;
+      else{
+        var jb=js(mb||null);
+        if(js(ml)===jb) src=mr;
+        else if(js(mr)===jb) src=ml;
+        else src={
+          n: (mb&&ml.n!==mb.n)?ml.n:mr.n,
+          view: ml.view||mr.view,
+          geo: (js(ml.geo)!==js(mb?mb.geo:null))?ml.geo:mr.geo,
+          strokes: mergeStrokes(mb&&mb.strokes, mr.strokes, ml.strokes)
+        };
+      }
+      /* 어떤 경로든 삭제 기록 합집합을 적용 — 늦은 푸시가 지운 선을 되살리지 못함 */
+      out.push({ n:src.n, view:src.view, geo:src.geo, del:del,
+                 strokes:delFilter(src.strokes, del) });
     }
     return out;
   }
@@ -5368,7 +5417,15 @@
     ["incident","lanes","prio","em"].forEach(function(f){
       if(js(local[f])!==js(base[f])) out[f]=local[f];
     });
-    out.chips=mergeChips(base.chips, remote.chips, local.chips);
+    out.cdel=unionDel(remote.cdel, local.cdel);
+    (function trimCdel(){
+      var ks=Object.keys(out.cdel);
+      if(ks.length>200){
+        ks.sort(function(a,b){ return out.cdel[a]-out.cdel[b]; })
+          .slice(0, ks.length-200).forEach(function(k){ delete out.cdel[k]; });
+      }
+    })();
+    out.chips=mergeChips(base.chips, remote.chips, local.chips, out.cdel);
     out.maps=mergeMaps(base.maps, remote.maps, local.maps);
     out.logs=mergeLogs(remote.logs, local.logs);
     out.ckd=mergeByRole(base.ckd, remote.ckd, local.ckd);
@@ -5433,16 +5490,25 @@
       });
       renderRdList();
       emState=st.em||null; applyEm();
+      chipDel=st.cdel||{};
       updateChipVis();
       saveState();   /* 로컬 저장 — syncApplying 중이라 push는 안 됨 */
     }finally{ syncApplying=false; }
   }
   function flushRemote(){
-    if(pendingRemote && !drag && !cur){
+    if(pendingRemote && !drag && !cur && !shapeMan){
       var st=pendingRemote; pendingRemote=null;
       receiveRemote(st);
     }
   }
+  /* 도형 핸들(크기·회전·이동) 조작 감지 — 조작 중 원격 반영이 손을 캔슬하지 않게 */
+  shapeXLayer.addEventListener("pointerdown",function(){ shapeMan=true; },true);
+  window.addEventListener("pointerup",function(){
+    if(shapeMan){ shapeMan=false; setTimeout(flushRemote,0); }
+  });
+  window.addEventListener("pointercancel",function(){
+    if(shapeMan){ shapeMan=false; setTimeout(flushRemote,0); }
+  });
 
   function startSync(){
     var code=shareCode();
@@ -5458,7 +5524,7 @@
         lastPayload=d.s;
         var st=null;
         try{ st=JSON.parse(d.s); }catch(e){ return; }
-        if(drag||cur){ pendingRemote=st; return; }  /* 조작 중이면 끝나고 적용 */
+        if(drag||cur||shapeMan){ pendingRemote=st; return; }  /* 조작 중이면 끝나고 적용 */
         receiveRemote(st);
       }, function(err){
         syncStatus="연결 오류 ("+(err&&err.code||"네트워크")+") — 자동 재시도";
@@ -5470,8 +5536,17 @@
   function schedulePush(){
     if(!shareCode() || !fbReady()) return;
     clearTimeout(pushTimer);
-    pushTimer=setTimeout(pushSync,600);
+    pushTimer=setTimeout(pushSync,180);   /* V2.58: 600→180ms */
   }
+  /* 탭이 백그라운드로 가면 타이머가 스로틀돼 전송이 수십 초 밀림 — 즉시 비우고 보냄 */
+  function flushPush(){
+    var had=!!(saveTimer||pushTimer);
+    if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; saveState(); }   /* schedulePush를 다시 걸 수 있음 */
+    if(pushTimer){ clearTimeout(pushTimer); pushTimer=null; }
+    if(had) pushSync();
+  }
+  document.addEventListener("visibilitychange",function(){ if(document.hidden) flushPush(); });
+  window.addEventListener("pagehide",flushPush);
   function pushSync(){
     var code=shareCode();
     if(!code || !fbReady() || VIEWER) return;
@@ -5489,8 +5564,9 @@
       fdb.collection("rooms").doc(code).set({s:s, by:deviceId, up:Date.now()}).catch(function(){});
       setSyncBase(out);
       if(js(out)!==js(curSt)){
-        /* 원격에만 있던 변경이 병합됐으면 화면에도 반영 */
-        try{ applyRemote(out); }catch(e){}
+        /* 원격에만 있던 변경이 병합됐으면 화면에도 반영 — 그리기·드래그·핸들 조작 중엔 끝나고 */
+        if(drag||cur||shapeMan) pendingRemote=out;
+        else { try{ applyRemote(out); }catch(e){} }
       }
     });
   }
@@ -5700,7 +5776,7 @@
       if(!swHadCtrl || swReloaded) return;   /* 최초 설치는 새로고침 불필요 */
       swReloaded=true;
       var t=setInterval(function(){
-        if(drag||cur) return;                /* 말 이동·그리는 중엔 기다림 */
+        if(drag||cur||shapeMan) return;      /* 말 이동·그리기·핸들 조작 중엔 기다림 */
         clearInterval(t); location.reload();
       },800);
     });
