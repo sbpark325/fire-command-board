@@ -1,59 +1,78 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>개인정보처리방침 — 현장지휘 보드</title>
 <style>
-  body{max-width:760px; margin:0 auto; padding:32px 20px 64px;
-    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
-    line-height:1.7; color:#22262A; background:#F6F7F4}
-  h1{font-size:22px; border-bottom:2px solid #FFB224; padding-bottom:10px}
-  h2{font-size:16px; margin-top:28px}
-  p,li{font-size:14px}
-  .date{color:#777; font-size:13px}
+  body{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif; max-width:760px;
+    margin:0 auto; padding:32px 20px 60px; line-height:1.7; color:#1a1d21; background:#fff}
+  h1{font-size:22px; margin:0 0 4px}
+  .date{color:#777; font-size:13px; margin-bottom:28px}
+  h2{font-size:16px; margin:28px 0 8px; padding-bottom:4px; border-bottom:2px solid #1a1d21}
+  ul{padding-left:22px; margin:6px 0}
+  li{margin:4px 0}
+  code{background:#f2f3f5; padding:1px 5px; border-radius:4px; font-size:13px}
+  @media (prefers-color-scheme: dark){
+    body{background:#15181b; color:#e8eaec}
+    h2{border-color:#e8eaec}
+    .date{color:#9aa0a6}
+    code{background:#24282c}
+  }
 </style>
 </head>
 <body>
 <h1>현장지휘 보드 개인정보처리방침</h1>
-<p class="date">시행일: 2026년 8월 14일</p>
+<p class="date">시행일: 2026-08-21</p>
 
-<p>"현장지휘 보드"(이하 "앱")는 소방 현장 지휘 활동 지원을 위한 도구입니다.
-본 방침은 앱이 처리하는 정보와 그 방식을 설명합니다.</p>
+<p>현장지휘 보드(이하 "앱")는 소방 현장 지휘판을 디지털화한 도구입니다.
+앱은 회원가입 없이 동작하며, 개인정보 수집을 최소화하도록 설계되었습니다.</p>
 
-<h2>1. 수집·처리하는 정보</h2>
+<h2>1. 수집·저장하는 정보</h2>
 <ul>
-  <li><b>보드 데이터</b>: 사용자가 작성한 사건명, 출동대 배치, 그림·메모, 체크리스트,
-    시간별 기록 등은 기본적으로 <b>기기 내부(브라우저 저장소)에만</b> 저장됩니다.</li>
-  <li><b>공유 기능 사용 시</b>: 보드를 "공유"하면 해당 보드 데이터가 Google Firebase
-    Firestore(서울 리전)에 저장되어 참여 코드를 아는 기기 간에 동기화됩니다.
-    이때 익명 인증 식별자(개인을 특정하지 않는 임의의 ID)가 사용됩니다.</li>
-  <li><b>위치정보</b>: 지도 기능에서 "현 위치" 사용 시 기기의 위치정보를 이용합니다.
-    위치는 화면 이동과 지도 기준점 설정에만 쓰이며, 기준점 좌표는 보드 데이터의 일부로만
-    저장됩니다. 위치 이력을 별도로 수집·전송하지 않습니다.</li>
-  <li><b>지도 타일</b>: 지도 표시를 위해 OpenStreetMap 및 Esri 서버에서 지도 이미지를
-    받아옵니다. 이 과정에서 해당 서비스에 통상적인 네트워크 정보(IP 주소)가 전달됩니다.</li>
+  <li><b>보드 내용</b> (사건명, 출동대 배치, 지도 위 그림·표기, 체크리스트, 무전문 송신 기록, 활동 기록):
+    기본적으로 <b>사용자의 기기 안(브라우저 저장소)에만</b> 저장됩니다.</li>
+  <li><b>공유 기능 사용 시</b>: 보드 내용이 실시간 동기화를 위해 Google Firebase(Firestore) 서버에
+    참여 코드 단위로 저장됩니다. 공유를 해제해도 서버에 마지막 상태가 남을 수 있으며,
+    삭제를 원하시면 아래 문의처로 참여 코드를 알려주시면 삭제해 드립니다.</li>
+  <li><b>익명 식별자</b>: 공유 기능은 Firebase 익명 인증을 사용합니다. 이름·이메일 등
+    개인 식별 정보는 수집하지 않습니다.</li>
+  <li><b>AI API 키</b>: 출동지령서 사진 인식 기능에 사용자가 직접 입력한 API 키는
+    <b>기기의 브라우저에만 저장</b>되며 앱 운영자에게 전송되지 않습니다.</li>
 </ul>
 
-<h2>2. 수집하지 않는 정보</h2>
+<h2>2. 외부로 전송되는 정보</h2>
 <ul>
-  <li>이름, 연락처, 계정 정보 등 개인 식별 정보를 수집하지 않습니다.</li>
-  <li>광고 식별자, 사용 통계·분석 도구를 사용하지 않습니다.</li>
+  <li><b>지도 표시</b>: 지도 타일을 불러오기 위해 OpenStreetMap 및 Esri 서버에
+    일반적인 웹 요청(IP 주소 포함)이 전송됩니다.</li>
+  <li><b>주소 검색</b>: 입력한 검색어가 지오코딩 서비스에 전송됩니다.</li>
+  <li><b>출동지령서 인식(선택 기능)</b>: 사용자가 AI 인식을 선택한 경우에만 지령서 사진이
+    선택한 제공자(Google Gemini 또는 Anthropic) API로 직접 전송됩니다.
+    기기 내 OCR을 선택하면 사진이 기기 밖으로 나가지 않습니다.</li>
 </ul>
 
-<h2>3. 보관 및 삭제</h2>
+<h2>3. 수집하지 않는 정보</h2>
 <ul>
-  <li>기기 내 데이터는 앱(브라우저) 데이터 삭제 또는 보드 삭제로 즉시 제거됩니다.</li>
-  <li>공유된 보드 데이터는 Firestore에 보관되며, 삭제를 원하시면 아래 연락처로
-    요청해 주세요. 익명 인증 계정은 30일 미사용 시 자동 삭제됩니다.</li>
+  <li>이름, 연락처, 이메일 등 계정 정보 (회원가입 없음)</li>
+  <li>기기 위치 정보 (GPS 권한을 요청하지 않습니다)</li>
+  <li>광고 식별자 — 앱에는 광고와 분석(트래킹) 도구가 없습니다</li>
 </ul>
 
-<h2>4. 제3자 제공</h2>
-<p>법령에 따른 경우를 제외하고 보드 데이터를 제3자에게 제공하지 않습니다.
-데이터 처리 위탁: Google Firebase(데이터 동기화), GitHub Pages(앱 호스팅),
-OpenStreetMap·Esri(지도 이미지).</p>
+<h2>4. 데이터 보관 및 삭제</h2>
+<ul>
+  <li>기기 내 데이터: 앱의 보드 목록에서 보드를 삭제하거나 브라우저 데이터를 지우면 삭제됩니다.</li>
+  <li>공유 서버 데이터: 문의처로 참여 코드를 알려주시면 지체 없이 삭제합니다.</li>
+</ul>
 
-<h2>5. 문의</h2>
-<p>개인정보 관련 문의: <a href="mailto:qkrtjdqls3@gmail.com">qkrtjdqls3@gmail.com</a></p>
+<h2>5. 제3자 제공</h2>
+<p>앱 운영자는 수집된 정보를 제3자에게 판매하거나 제공하지 않습니다.
+위 2항의 전송은 기능 제공을 위한 처리 위탁(Google Firebase, 지도 타일 서버,
+사용자가 선택한 AI 제공자)에 한정됩니다.</p>
+
+<h2>6. 문의처</h2>
+<p>개인정보 관련 문의·삭제 요청: <code>qkrtjdqls3@gmail.com</code></p>
+
+<h2>7. 변경 고지</h2>
+<p>이 방침이 변경되면 본 페이지에 갱신하여 고지합니다.</p>
 </body>
 </html>
