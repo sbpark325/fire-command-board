@@ -257,6 +257,13 @@
     border:1px solid var(--edge); box-shadow:var(--shadow);
   }
   .toolOpts[hidden]{display:none}
+  #optClose{
+    width:26px; height:26px; border:none; padding:0; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; background:rgba(255,255,255,.09); color:var(--ink-lo);
+    font-size:14px; line-height:1; font-weight:700;
+  }
+  #optClose:active{background:rgba(255,255,255,.18); color:var(--ink-hi)}
   .optGroup{display:flex; align-items:center; gap:4px}
   .optGroup[hidden]{display:none}
   .toolOpts .sep[hidden]{display:none}
@@ -753,6 +760,13 @@
   .chipCard.presetCard{width:min(640px,94vw); max-height:86vh}  /* .chipCard보다 뒤에 오지 않아 우선순위로 이긴다 */
   .presetSub{margin:-6px 0 0; font-size:12px; color:var(--ink-lo); font-weight:600}
   .stTabs{display:flex; gap:6px; flex-wrap:wrap}
+  /* 모바일: 관서 탭을 한 줄 가로 스크롤로 — 스와이프로 훑기 쉽게 (V2.63) */
+  @media (max-width:820px), (pointer:coarse){
+    #stTabs{flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none;
+      padding-bottom:4px; -webkit-overflow-scrolling:touch}
+    #stTabs::-webkit-scrollbar{display:none}
+    #stTabs .stTab{white-space:nowrap; flex:0 0 auto}
+  }
   .stTab{
     border:1px solid var(--edge-2); background:transparent; color:var(--ink-hi);
     border-radius:99px; padding:7px 12px; font-weight:700; font-size:12.5px;
@@ -1006,7 +1020,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.62</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.63</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -1080,6 +1094,8 @@
       </div>
       <span class="sep" id="optSep2" hidden></span>
       <div class="optGroup" id="optErase" hidden></div>
+      <span class="sep"></span>
+      <button id="optClose" aria-label="옵션 바 닫기" title="옵션 바를 닫습니다 — 도구 버튼을 다시 누르면 열립니다">×</button>
     </div>
     <div class="shapeMenu" id="shapeMenu" hidden>
       <button data-shape="arrow" aria-pressed="false">↗ 화살표</button>
@@ -3179,6 +3195,7 @@
   }
   function setTool(t){
     var changed=(tool!==t);
+    toolOptsClosed=false;   /* 도구를 (다시) 누르면 옵션 바 재표시 */
     tool=t;
     if(t!=="pan" && changed) deselectShape();
     var isShape=!!SHAPE_NAMES[t];
@@ -3253,10 +3270,11 @@
   }
   var optEraseMode=document.getElementById("optEraseMode");
   var optSep2=document.getElementById("optSep2");
+  var toolOptsClosed=false;   /* ×로 닫으면 같은 도구를 다시 누를 때까지 숨김 (V2.63) */
   function refreshToolOpts(){
     var isDraw=(tool==="pen"||tool==="arrow"||tool==="rect"||tool==="building");
     var isErase=(tool==="erase");
-    toolOpts.hidden=!(isDraw||isErase);
+    toolOpts.hidden=!(isDraw||isErase)||toolOptsClosed;
     optColors.hidden=!isDraw;
     optWidths.hidden=!isDraw;
     optSep.hidden=!isDraw;
@@ -3270,6 +3288,9 @@
   }
   optEraseMode.querySelectorAll(".optMode").forEach(function(b){
     b.addEventListener("click",function(){ eraseMode=b.dataset.em; refreshToolOpts(); });
+  });
+  document.getElementById("optClose").addEventListener("click",function(){
+    toolOptsClosed=true; refreshToolOpts();
   });
   PEN_COLORS.forEach(function(c){
     var b=document.createElement("button");
@@ -4335,6 +4356,22 @@
     });
     updatePuN();
   }
+  /* 모바일: 출동대 목록을 좌우로 쓸면 이전/다음 관서로 넘어감 (V2.63) */
+  (function(){
+    var sx=0, sy=0, on=false;
+    puGrid.addEventListener("pointerdown",function(e){ sx=e.clientX; sy=e.clientY; on=true; },{passive:true});
+    puGrid.addEventListener("pointerup",function(e){
+      if(!on) return; on=false;
+      var dx=e.clientX-sx, dy=e.clientY-sy;
+      if(Math.abs(dx)<60 || Math.abs(dy)>50) return;   /* 세로 스크롤·짧은 탭은 무시 */
+      var n=PRESETS.length;
+      curSt=(curSt+(dx<0?1:-1)+n)%n;
+      renderStTabs(); renderPuGrid();
+      var t=stTabs.querySelector('[aria-pressed="true"]');
+      if(t&&t.scrollIntoView) t.scrollIntoView({block:"nearest", inline:"center"});
+    },{passive:true});
+    puGrid.addEventListener("pointercancel",function(){ on=false; },{passive:true});
+  })();
   function openPreset(){
     puSel={}; curSt=0;
     renderStTabs(); renderPuGrid();
