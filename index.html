@@ -605,13 +605,31 @@
   #viewerBadge.editMode{
     background:rgba(78,134,232,.12); border-color:rgba(78,134,232,.6); color:#7FA8EE;
   }
-  /* 상단 출동차량·인원 집계 (V2.65) */
+  /* 출동차량·인원 집계 — 지도 우측 상단 오버레이 (V2.67) */
   #deployStat{
-    display:inline-flex; align-items:center; flex:0 0 auto; white-space:nowrap;
-    background:rgba(255,255,255,.07); border-radius:99px; padding:5px 12px;
-    font-size:12.5px; font-weight:800; color:var(--ink-lo); letter-spacing:.2px;
+    position:absolute; right:12px; top:12px; z-index:22;
+    display:flex; align-items:center; gap:8px; white-space:nowrap;
+    background:rgba(24,26,29,.88); border:1px solid var(--edge); border-radius:99px;
+    padding:6px 8px 6px 13px; backdrop-filter:blur(4px);
+    font-size:13px; font-weight:800; color:var(--ink-hi); letter-spacing:.2px;
+    box-shadow:var(--shadow);
   }
   #deployStat[hidden]{display:none}
+  #deployStat button{
+    width:22px; height:22px; border:none; padding:0; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; background:rgba(255,255,255,.09); color:var(--ink-lo);
+    font-size:13px; line-height:1; font-weight:800;
+  }
+  #deployStat button:active{background:rgba(255,255,255,.18); color:var(--ink-hi)}
+  #deployStatShow{
+    position:absolute; right:12px; top:12px; z-index:22;
+    width:38px; height:38px; border:1px solid var(--edge); padding:0;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; background:rgba(24,26,29,.88); backdrop-filter:blur(4px);
+    font-size:17px; line-height:1; box-shadow:var(--shadow);
+  }
+  #deployStatShow[hidden]{display:none}
   /* 모드 전환 확인 다이얼로그 */
   #modeConfirm{
     position:fixed; top:calc(var(--topH) + 12px); left:50%; transform:translateX(-50%);
@@ -1048,9 +1066,8 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.66</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.67</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
-  <span id="deployStat" hidden title="배치된 출동차량 수 · 대원(탑승/명단) 인원 합계 — 전체 지도탭 포함, 미배치 제외"></span>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
   <button class="tbtn em" id="emBtn">비상</button>
@@ -1096,6 +1113,11 @@
       <button id="hydBtn" aria-label="소방용수 표시" aria-pressed="false" hidden title="울산 소방용수시설(소화전·저수조 등)을 지도에 표시">용수</button>
       <button id="mapClearBtn" aria-label="지도 배경 지우기" hidden title="이 지도 탭의 지도 배경과 위치 기준점을 지웁니다 (그림·말은 유지)">지도<br>지우기</button>
     </div>
+    <div id="deployStat" hidden title="배치된 출동차량 수 · 대원(탑승/명단) 인원 합계 — 전체 지도탭 포함, 미배치 제외">
+      <span id="deployStatTxt"></span>
+      <button id="deployStatHide" aria-label="집계 숨기기" title="집계를 숨깁니다 — 🚒 버튼으로 다시 표시">×</button>
+    </div>
+    <button id="deployStatShow" hidden aria-label="출동차량·인원 집계 표시" title="출동차량·인원 집계를 다시 표시합니다">🚒</button>
     <div id="osmCredit" hidden>© OpenStreetMap contributors</div>
     <div id="hydLegend" hidden>
       <div class="hlT">소방용수</div>
@@ -1759,6 +1781,21 @@
   /* ── 카운터 ── */
   var trayCount=document.getElementById("trayCount");
   var deployStat=document.getElementById("deployStat");
+  var deployStatTxt=document.getElementById("deployStatTxt");
+  var deployStatShow=document.getElementById("deployStatShow");
+  var DSTAT_HIDE_K="fireboard-dstat-hide";
+  var dsHidden=false;
+  try{ dsHidden=localStorage.getItem(DSTAT_HIDE_K)==="1"; }catch(e){}
+  document.getElementById("deployStatHide").addEventListener("click",function(){
+    dsHidden=true;
+    try{ localStorage.setItem(DSTAT_HIDE_K,"1"); }catch(e){}
+    refreshCounts();
+  });
+  deployStatShow.addEventListener("click",function(){
+    dsHidden=false;
+    try{ localStorage.removeItem(DSTAT_HIDE_K); }catch(e){}
+    refreshCounts();
+  });
   function refreshCounts(){
     function vis(list){
       var n=0;
@@ -1769,13 +1806,14 @@
     document.querySelectorAll("#laneList .lane").forEach(function(l){
       l.querySelector(".laneCount").textContent=vis(l.querySelectorAll(".chip"));
     });
-    /* 상단 출동차량·인원 집계 — 상태판+지도(전체 탭) 배치분, 미배치 제외 (V2.65) */
+    /* 출동차량·인원 집계(지도 우측 상단) — 상태판+지도(전체 탭) 배치분, 미배치 제외 (V2.67) */
     var vch=0, pp=0;
     function acc(c){ vch++; pp+=crewCount(c); }
     document.querySelectorAll("#laneList .chip").forEach(acc);
     planLayer.querySelectorAll(".chip").forEach(acc);
-    deployStat.hidden=!vch;
-    deployStat.textContent="\uD83D\uDE92 "+vch+"\uB300 \u00B7 \uD83D\uDC65 "+pp+"\uBA85";
+    deployStat.hidden=!vch||dsHidden;
+    deployStatShow.hidden=!vch||!dsHidden;
+    deployStatTxt.textContent="\uD83D\uDE92 "+vch+"\uB300 \u00B7 \uD83D\uDC65 "+pp+"\uBA85";
   }
 
   /* ── 패널: 오른쪽 사이드바 2개 (A: 우선순위·상태 / B: 체크리스트·무전문·기록) ── */
