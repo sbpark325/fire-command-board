@@ -1066,7 +1066,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.67</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.68</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -4014,6 +4014,9 @@
       var r=wrap.getBoundingClientRect();
       at=s2w(r.width/2, r.height/2);
     }
+    /* 같은 출동대 대원 심볼이 이미 있으면 계단식으로 비켜 놓기 — 무제한 생성 (V2.68) */
+    var dup=strokes.filter(function(k){ return k.type==="stamp"&&k.sym==="crew"&&k.t===lbl; }).length;
+    if(dup){ at=[at[0]+dup*30/view.s, at[1]+dup*10/view.s]; }
     var sq={type:"stamp", sym:"crew", at:at, t:lbl};
     var n=crewCount(chip);
     if(n) sq.n=n;
@@ -5312,9 +5315,11 @@
     li.appendChild(d); li.appendChild(x);
     return li;
   }
+  var PRIO_DEFAULT=["\uC778\uBA85\uAD6C\uC870","\uB300\uC6D0\uC548\uC804"];   /* 1.인명구조 2.대원안전 (V2.68) */
   function buildPrio(arr){
     prioListEl.textContent="";
-    ((arr&&arr.length)?arr:["","","",""]).forEach(function(t){
+    var hasText=arr&&arr.length&&arr.some(function(t){ return (t||"").trim(); });
+    (hasText?arr:PRIO_DEFAULT).forEach(function(t){
       prioListEl.appendChild(makePrioItem(t));
     });
   }
