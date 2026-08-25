@@ -176,9 +176,19 @@
     background:rgba(255,178,36,.06);
     box-shadow:0 0 0 1px rgba(255,255,255,.6);
   }
-  #shapeXLayer .sx::before,#shapeXLayer .sh::before{
+  #shapeXLayer .sx::before,#shapeXLayer .sh::before,#shapeXLayer .ssp::before{
     content:""; position:absolute; inset:-12px;   /* 손가락용 넓은 터치 영역 */
   }
+  /* 대원 인원 쪼개기 버튼 (V2.66) */
+  #shapeXLayer .ssp{
+    position:absolute; transform:translate(-50%,-50%);
+    height:24px; padding:0 10px; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center; white-space:nowrap;
+    border-radius:99px; border:1px solid rgba(0,0,0,.35);
+    background:#fff; color:#22262A; font-size:11.5px; line-height:1; font-weight:800;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  #shapeXLayer .ssp:active{background:var(--amber); border-color:var(--amber)}
   #shapeXLayer .sh{
     position:absolute; transform:translate(-50%,-50%);
     width:26px; height:26px; padding:0; pointer-events:auto; touch-action:none;
@@ -610,6 +620,17 @@
     padding:15px 17px; box-shadow:0 8px 26px rgba(0,0,0,.5);
   }
   #modeConfirm[hidden]{display:none}
+  /* 대원 분할(쪼개기) 다이얼로그 (V2.66) */
+  #crewSplit{
+    position:fixed; top:calc(var(--topH) + 12px); left:50%; transform:translateX(-50%);
+    z-index:60; display:flex; flex-direction:column; gap:12px; min-width:250px; max-width:min(440px,92vw);
+    background:var(--bg1); border:1px solid var(--edge-2); border-radius:12px;
+    padding:15px 17px; box-shadow:0 8px 26px rgba(0,0,0,.5);
+  }
+  #crewSplit[hidden]{display:none}
+  #crewSplit .csT{font-size:13.5px; font-weight:700; color:var(--ink-hi)}
+  #crewSplit .csGrid{display:flex; gap:8px; flex-wrap:wrap}
+  #crewSplit .csGrid .btn{flex:0 0 auto; min-width:54px}
   #modeConfirm .mcT{font-size:13.5px; font-weight:700; color:var(--ink-hi)}
   #modeConfirm .mcBtns{display:flex; gap:8px}
   #modeConfirm .mcBtns .btn{flex:1}
@@ -1027,7 +1048,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.65</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.66</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="deployStat" hidden title="배치된 출동차량 수 · 대원(탑승/명단) 인원 합계 — 전체 지도탭 포함, 미배치 제외"></span>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
@@ -1042,6 +1063,11 @@
   <button class="tbtn" id="reportBtn" title="현재 보드 상태로 활동 보고서를 만듭니다">보고서</button>
   <button class="tbtn" id="logBtn" aria-expanded="true">기록 <span class="n" id="logCount">0</span></button>
 </header>
+<div id="crewSplit" hidden>
+  <div class="csT" id="crewSplitT"></div>
+  <div class="csGrid" id="crewSplitGrid"></div>
+  <div class="csGrid"><button class="btn" id="crewSplitCancel">취소</button></div>
+</div>
 <div id="modeConfirm" hidden>
   <div class="mcT" id="modeConfirmT"></div>
   <div class="mcBtns">
@@ -2921,6 +2947,7 @@
       else{ h.style.left=x1+"px"; h.style.top=y1+"px"; }
     });
     var rr=shapeXLayer.querySelector(".sr"); if(rr){ rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px"; }
+    var sp=shapeXLayer.querySelector(".ssp"); if(sp){ sp.style.left=(x1+24)+"px"; sp.style.top=(y1+12)+"px"; }
     var gm=shapeXLayer.querySelector(".sg"); if(gm){ gm.style.left=x0+"px"; gm.style.top=y0+"px"; }
   }
   function rebuildShapeX(){
@@ -2964,6 +2991,15 @@
     xb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
     xb.addEventListener("click",function(e){ e.stopPropagation(); deleteShape(s); });
     shapeXLayer.appendChild(xb);
+    if(s.type==="stamp"&&s.sym==="crew"&&s.n>=2){
+      /* 인원 쪼개기: n명을 두 심볼로 분리 (V2.66) */
+      var sb=document.createElement("button");
+      sb.className="ssp"; sb.textContent="쪼개기"; sb.setAttribute("aria-label","대원 인원 분리");
+      sb.style.left=(x1+24)+"px"; sb.style.top=(y1+12)+"px";
+      sb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+      sb.addEventListener("click",function(e){ e.stopPropagation(); openCrewSplit(s); });
+      shapeXLayer.appendChild(sb);
+    }
     function rotP(pt,C,rot){
       if(!rot) return [pt[0],pt[1]];
       var dx=pt[0]-C[0], dy=pt[1]-C[1], c=Math.cos(rot), si=Math.sin(rot);
@@ -3952,6 +3988,37 @@
     if(!infoChip) return;
     chipInfoModal.hidden=true;
     deploySquad(infoChip);
+  });
+  /* ── 대원 인원 쪼개기 (V2.66): n명 심볼 → (n-k)명 + k명 두 심볼로 분리 ── */
+  var crewSplitEl=document.getElementById("crewSplit");
+  var crewSplitT=document.getElementById("crewSplitT");
+  var crewSplitGrid=document.getElementById("crewSplitGrid");
+  var splitTarget=null;
+  function openCrewSplit(st){
+    splitTarget=st;
+    crewSplitT.textContent=(st.t||"대원")+" \u2014 \uCD1D "+st.n+"\uBA85 \uC911 \uBA87 \uBA85\uC744 \uBD84\uB9AC\uD560\uAE4C\uC694?";
+    crewSplitGrid.textContent="";
+    for(var k=1;k<st.n;k++)(function(k){
+      var b=document.createElement("button");
+      b.className="btn"; b.textContent=k+"\uBA85";
+      b.addEventListener("click",function(){ doCrewSplit(k); });
+      crewSplitGrid.appendChild(b);
+    })(k);
+    crewSplitEl.hidden=false;
+  }
+  function doCrewSplit(k){
+    var st=splitTarget; crewSplitEl.hidden=true; splitTarget=null;
+    if(!st||strokes.indexOf(st)<0||!(st.n>k)) return;
+    st.n-=k;
+    var off=34/view.s;
+    var ns={type:"stamp", sym:"crew", at:[st.at[0]+off*2, st.at[1]+off], t:st.t, n:k};
+    strokes.push(ns);
+    log("\uB300\uC6D0 \uBD84\uD560: "+(st.t||"\uB300\uC6D0")+" "+(st.n+k)+"\uBA85 \u2192 "+st.n+"\uBA85 + "+k+"\uBA85");
+    redraw(); scheduleSave();
+    selectShape(ns);   /* 새 심볼 선택 상태로 — 바로 끌어서 배치 */
+  }
+  document.getElementById("crewSplitCancel").addEventListener("click",function(){
+    crewSplitEl.hidden=true; splitTarget=null;
   });
   document.getElementById("ciEdit").addEventListener("click",function(){
     chipInfoModal.hidden=true;
