@@ -176,9 +176,19 @@
     background:rgba(255,178,36,.06);
     box-shadow:0 0 0 1px rgba(255,255,255,.6);
   }
-  #shapeXLayer .sx::before,#shapeXLayer .sh::before,#shapeXLayer .ssp::before{
+  #shapeXLayer .sx::before,#shapeXLayer .sh::before,#shapeXLayer .ssp::before,#shapeXLayer .spe::before{
     content:""; position:absolute; inset:-12px;   /* 손가락용 넓은 터치 영역 */
   }
+  /* 메모 수정 연필 버튼 (V2.70) */
+  #shapeXLayer .spe{
+    position:absolute; transform:translate(-50%,-50%);
+    width:24px; height:24px; padding:0; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:50%; border:1px solid rgba(0,0,0,.35);
+    background:#fff; font-size:12px; line-height:1;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  #shapeXLayer .spe:active{background:var(--amber); border-color:var(--amber)}
   /* 대원 인원 쪼개기 버튼 (V2.66) */
   #shapeXLayer .ssp{
     position:absolute; transform:translate(-50%,-50%);
@@ -1070,7 +1080,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.69</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.70</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -3011,6 +3021,7 @@
     });
     var rr=shapeXLayer.querySelector(".sr"); if(rr){ rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px"; }
     var sp=shapeXLayer.querySelector(".ssp"); if(sp){ sp.style.left=(x1+24)+"px"; sp.style.top=(y1+12)+"px"; }
+    var pe=shapeXLayer.querySelector(".spe"); if(pe){ pe.style.left=((x0+x1)/2)+"px"; pe.style.top=(y0-16)+"px"; }
     var gm=shapeXLayer.querySelector(".sg"); if(gm){ gm.style.left=x0+"px"; gm.style.top=y0+"px"; }
   }
   function rebuildShapeX(){
@@ -3055,10 +3066,10 @@
     xb.addEventListener("click",function(e){ e.stopPropagation(); deleteShape(s); });
     shapeXLayer.appendChild(xb);
     if(s.type==="note"){
-      /* 메모 수정 버튼 (V2.69) */
+      /* 메모 수정: 메모 바로 위 연필 버튼 (V2.70) */
       var eb=document.createElement("button");
-      eb.className="ssp"; eb.textContent="\uC218\uC815"; eb.setAttribute("aria-label","\uBA54\uBAA8 \uC218\uC815");
-      eb.style.left=(x1+24)+"px"; eb.style.top=(y1+12)+"px";
+      eb.className="spe"; eb.textContent="\u270F\uFE0F"; eb.setAttribute("aria-label","\uBA54\uBAA8 \uC218\uC815");
+      eb.style.left=((x0+x1)/2)+"px"; eb.style.top=(y0-16)+"px";
       eb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
       eb.addEventListener("click",function(e){ e.stopPropagation(); openNoteEdit(s); });
       shapeXLayer.appendChild(eb);
