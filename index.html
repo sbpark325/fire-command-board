@@ -728,6 +728,10 @@
   }
   .searchItem:active{border-color:var(--amber)}
 
+  /* 공유: 보내기 + 링크만 복사 행 (V2.69) */
+  .syncRow{display:flex; gap:8px}
+  .syncRow .btn:first-child{flex:1; width:auto}
+  .syncRow .btn:last-child{flex:0 0 auto; white-space:nowrap}
   /* 메모(말풍선) 입력 모달 */
   #noteModal{
     position:fixed; inset:0; z-index:80; display:flex; align-items:center; justify-content:center;
@@ -1066,7 +1070,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.68</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.69</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -1326,8 +1330,14 @@
         <div id="syncCodeBox" hidden>
           <div style="display:flex; flex-direction:column; gap:9px">
             <div class="syncCodeWrap"><div class="syncCode" id="syncCode">------</div></div>
-            <button class="btn primary" id="syncKakao" style="width:100%">📤 편집 참여 링크 보내기</button>
-            <button class="btn" id="syncKakaoView" style="width:100%">👁 보기 전용 링크 보내기</button>
+            <div class="syncRow">
+              <button class="btn primary" id="syncKakao">📤 편집 참여 링크 보내기</button>
+              <button class="btn" id="syncLinkCopy" title="편집 참여 링크(URL)만 클립보드에 복사합니다">🔗 복사</button>
+            </div>
+            <div class="syncRow">
+              <button class="btn" id="syncKakaoView">👁 보기 전용 링크 보내기</button>
+              <button class="btn" id="syncLinkCopyView" title="보기 전용 링크(URL)만 클립보드에 복사합니다">🔗 복사</button>
+            </div>
             <p class="presetSub" style="margin:0">링크를 받은 사람은 열기만 하면 바로 참여됩니다. 보기 전용은 화면만 보고 수정은 못 합니다. 코드 입력 참여는 편집 모드입니다.</p>
             <button id="syncStop" hidden>이 기기에서 공유 해제</button>
           </div>
@@ -2728,12 +2738,27 @@
     noteModal.hidden=false;
     noteText.focus();
   }
-  function closeNoteModal(){ noteModal.hidden=true; noteAt=null; }
+  var noteEdit=null;   /* 수정 대상 메모 (V2.69) */
+  function openNoteEdit(st){
+    noteEdit=st; noteAt=null;
+    noteText.value=st.t||"";
+    noteModal.hidden=false;
+    noteText.focus();
+  }
+  function closeNoteModal(){ noteModal.hidden=true; noteAt=null; noteEdit=null; }
   document.getElementById("noteCancel").addEventListener("click",closeNoteModal);
   noteModal.addEventListener("pointerdown",function(e){ if(e.target===noteModal) closeNoteModal(); });
   document.getElementById("noteOk").addEventListener("click",function(){
     var t=noteText.value.trim();
     if(!t){ noteText.focus(); return; }
+    if(noteEdit){
+      /* 기존 메모 내용 교체 (V2.69) */
+      noteEdit.t=t;
+      log("\uBA54\uBAA8 \uC218\uC815: "+(t.length>20?t.slice(0,20)+"\u2026":t));
+      redraw(); scheduleSave(); rebuildShapeX();
+      closeNoteModal();
+      return;
+    }
     var noteObj={type:"note", at:noteAt, t:t};
     strokes.push(noteObj);
     log("메모 추가: "+(t.length>20?t.slice(0,20)+"…":t));
@@ -3029,6 +3054,15 @@
     xb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
     xb.addEventListener("click",function(e){ e.stopPropagation(); deleteShape(s); });
     shapeXLayer.appendChild(xb);
+    if(s.type==="note"){
+      /* 메모 수정 버튼 (V2.69) */
+      var eb=document.createElement("button");
+      eb.className="ssp"; eb.textContent="\uC218\uC815"; eb.setAttribute("aria-label","\uBA54\uBAA8 \uC218\uC815");
+      eb.style.left=(x1+24)+"px"; eb.style.top=(y1+12)+"px";
+      eb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+      eb.addEventListener("click",function(e){ e.stopPropagation(); openNoteEdit(s); });
+      shapeXLayer.appendChild(eb);
+    }
     if(s.type==="stamp"&&s.sym==="crew"&&s.n>=2){
       /* 인원 쪼개기: n명을 두 심볼로 분리 (V2.66) */
       var sb=document.createElement("button");
@@ -5971,6 +6005,26 @@
   }
   document.getElementById("syncKakaoView").addEventListener("click",function(){ shareLink(true); });
   document.getElementById("syncKakao").addEventListener("click",function(){ shareLink(false); });
+  /* 링크(URL)만 클립보드 복사 — 붙여넣으면 바로 클릭 가능한 참여 링크 (V2.69) */
+  function fallbackCopy(t,ok){
+    var ta=document.createElement("textarea");
+    ta.value=t; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select();
+    var done=false;
+    try{ done=document.execCommand("copy"); }catch(e){}
+    ta.remove();
+    if(done) ok(); else showSyncErr("\uBCF5\uC0AC \uC2E4\uD328 \u2014 \uCF54\uB4DC\uB97C \uC9C1\uC811 \uC804\uB2EC\uD558\uC138\uC694: "+shareCode());
+  }
+  function copyShareLink(viewOnly){
+    var code=shareCode(); if(!code) return;
+    var url="https://sbpark325.github.io/fire-command-board/?join="+code+(viewOnly?"&mode=view":"");
+    function ok(){ showSyncOk("\u2713 \uB9C1\uD06C\ub97c \uBCF5\uC0AC\uD588\uC2B5\uB2C8\uB2E4 \u2014 \uBD99\uC5EC\uB123\uC73C\uBA74 \uBC14\uB85C \uCC38\uC5EC \uB9C1\uD06C\uAC00 \uB429\uB2C8\uB2E4"); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(ok).catch(function(){ fallbackCopy(url,ok); });
+    }else fallbackCopy(url,ok);
+  }
+  document.getElementById("syncLinkCopy").addEventListener("click",function(){ copyShareLink(false); });
+  document.getElementById("syncLinkCopyView").addEventListener("click",function(){ copyShareLink(true); });
   function doShareSheet(name,text,url,code){
     if(navigator.share){
       navigator.share({title:"현장지휘 보드 — "+name, text:text, url:url}).catch(function(){});
