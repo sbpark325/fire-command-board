@@ -648,17 +648,18 @@
     padding:15px 17px; box-shadow:0 8px 26px rgba(0,0,0,.5);
   }
   #modeConfirm[hidden]{display:none}
-  /* 대원 분할(쪼개기) 다이얼로그 (V2.66) */
-  #crewSplit{
+  /* 대원 분할(V2.66)·건물 층수(V2.72) 다이얼로그 — 스타일 공유 */
+  #crewSplit,#bldFloors{
     position:fixed; top:calc(var(--topH) + 12px); left:50%; transform:translateX(-50%);
     z-index:60; display:flex; flex-direction:column; gap:12px; min-width:250px; max-width:min(440px,92vw);
     background:var(--bg1); border:1px solid var(--edge-2); border-radius:12px;
     padding:15px 17px; box-shadow:0 8px 26px rgba(0,0,0,.5);
   }
-  #crewSplit[hidden]{display:none}
-  #crewSplit .csT{font-size:13.5px; font-weight:700; color:var(--ink-hi)}
-  #crewSplit .csGrid{display:flex; gap:8px; flex-wrap:wrap}
-  #crewSplit .csGrid .btn{flex:0 0 auto; min-width:54px}
+  #crewSplit[hidden],#bldFloors[hidden]{display:none}
+  #crewSplit .csT,#bldFloors .csT{font-size:13.5px; font-weight:700; color:var(--ink-hi)}
+  #crewSplit .csGrid,#bldFloors .csGrid{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  #crewSplit .csGrid .btn,#bldFloors .csGrid .btn{flex:0 0 auto; min-width:54px}
+  #bldFloors b{font-size:15px; min-width:64px; text-align:center}
   #modeConfirm .mcT{font-size:13.5px; font-weight:700; color:var(--ink-hi)}
   #modeConfirm .mcBtns{display:flex; gap:8px}
   #modeConfirm .mcBtns .btn{flex:1}
@@ -1086,7 +1087,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.71</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.72</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -1100,6 +1101,19 @@
   <button class="tbtn" id="reportBtn" title="현재 보드 상태로 활동 보고서를 만듭니다">보고서</button>
   <button class="tbtn" id="logBtn" aria-expanded="true">기록 <span class="n" id="logCount">0</span></button>
 </header>
+<div id="bldFloors" hidden>
+  <div class="csT">건물 층수</div>
+  <div class="csGrid">
+    <button class="btn" id="bfMinus">−</button>
+    <b id="bfCnt">자동</b>
+    <button class="btn" id="bfPlus">+</button>
+  </div>
+  <div class="csGrid" id="bfQuick"></div>
+  <div class="csGrid">
+    <button class="btn" id="bfAuto">자동(높이 비례)</button>
+    <button class="btn primary" id="bfClose">닫기</button>
+  </div>
+</div>
 <div id="crewSplit" hidden>
   <div class="csT" id="crewSplitT"></div>
   <div class="csGrid" id="crewSplitGrid"></div>
@@ -2663,14 +2677,24 @@
       if(rot){ ctx.save(); ctx.translate(rcx,rcy); ctx.rotate(rot); x=-w/2; y=-h/2; }
       ctx.strokeRect(x,y,w,h);
       if(s.type==="building"){
-        /* 층 구분선: 높이에 따라 1~6층 */
-        var floors=Math.min(6,Math.max(1,Math.round(h/55)));
+        /* 층 구분선: 수동 층수(s.fl) 우선, 없으면 높이에 따라 1~6층 자동 (V2.72) */
+        var floors=s.fl?Math.min(60,Math.max(1,s.fl)):Math.min(6,Math.max(1,Math.round(h/55)));
         ctx.beginPath();
         for(var f=1;f<floors;f++){
           var fy=y+h*f/floors;
           ctx.moveTo(x,fy); ctx.lineTo(x+w,fy);
         }
         ctx.stroke();
+        if(s.fl){
+          /* 층수 라벨: 건물 좌상단 위 (화면 고정 크기) */
+          ctx.font="800 "+(13/view.s)+"px sans-serif";
+          ctx.textAlign="left"; ctx.textBaseline="alphabetic";
+          ctx.lineWidth=3/view.s; ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineJoin="round";
+          ctx.strokeText(s.fl+"층", x+3/view.s, y-6/view.s);
+          ctx.fillStyle=s.color;
+          ctx.fillText(s.fl+"층", x+3/view.s, y-6/view.s);
+          ctx.strokeStyle=s.color; ctx.lineWidth=s.width;   /* 상태 복원 */
+        }
       }
       if(rot) ctx.restore();
     }else if(s.type==="arrow"){
@@ -3026,7 +3050,11 @@
       else{ h.style.left=x1+"px"; h.style.top=y1+"px"; }
     });
     var rr=shapeXLayer.querySelector(".sr"); if(rr){ rr.style.left=((x0+x1)/2)+"px"; rr.style.top=(y0-26)+"px"; }
-    var sp=shapeXLayer.querySelector(".ssp"); if(sp){ sp.style.left=(x1+24)+"px"; sp.style.top=(y1+12)+"px"; }
+    var sp=shapeXLayer.querySelector(".ssp");
+    if(sp){
+      if(s.type==="building"){ sp.style.left=((x0+x1)/2)+"px"; sp.style.top=(y1+18)+"px"; }
+      else{ sp.style.left=(x1+24)+"px"; sp.style.top=(y1+12)+"px"; }
+    }
     var pe=shapeXLayer.querySelector(".spe"); if(pe){ pe.style.left=((x0+x1)/2)+"px"; pe.style.top=(y0-16)+"px"; }
     var gm=shapeXLayer.querySelector(".sg"); if(gm){ gm.style.left=x0+"px"; gm.style.top=y0+"px"; }
   }
@@ -3079,6 +3107,15 @@
       eb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
       eb.addEventListener("click",function(e){ e.stopPropagation(); openNoteEdit(s); });
       shapeXLayer.appendChild(eb);
+    }
+    if(s.type==="building"){
+      /* 층수 설정 버튼 (V2.72) */
+      var fb=document.createElement("button");
+      fb.className="ssp"; fb.textContent=(s.fl?s.fl+"층":"층수"); fb.setAttribute("aria-label","건물 층수 설정");
+      fb.style.left=((x0+x1)/2)+"px"; fb.style.top=(y1+18)+"px";
+      fb.addEventListener("pointerdown",function(e){ e.stopPropagation(); });
+      fb.addEventListener("click",function(e){ e.stopPropagation(); openBldFloors(s); });
+      shapeXLayer.appendChild(fb);
     }
     if(s.type==="stamp"&&s.sym==="crew"&&s.n>=2){
       /* 인원 쪼개기: n명을 두 심볼로 분리 (V2.66) */
@@ -4140,6 +4177,52 @@
   }
   document.getElementById("crewSplitCancel").addEventListener("click",function(){
     crewSplitEl.hidden=true; splitTarget=null;
+  });
+  /* ── 건물 층수 설정 (V2.72) ── */
+  var bldFloorsEl=document.getElementById("bldFloors");
+  var bfCnt=document.getElementById("bfCnt");
+  var bfTarget=null, bfBefore=null;
+  function bfAutoFloors(st){
+    var h=Math.abs(st.b[1]-st.a[1]);
+    return Math.min(6,Math.max(1,Math.round(h/55)));
+  }
+  function bfRender(){
+    bfCnt.textContent=bfTarget&&bfTarget.fl?bfTarget.fl+"층":"자동";
+    var fb=shapeXLayer.querySelector(".ssp");
+    if(fb&&bfTarget) fb.textContent=(bfTarget.fl?bfTarget.fl+"층":"층수");
+  }
+  function bfSet(fl){
+    if(!bfTarget) return;
+    if(fl) bfTarget.fl=Math.min(60,Math.max(1,fl)); else delete bfTarget.fl;
+    redraw(); scheduleSave(); bfRender();
+  }
+  function openBldFloors(st){
+    bfTarget=st; bfBefore=st.fl||0;
+    bldFloorsEl.hidden=false; bfRender();
+  }
+  document.getElementById("bfMinus").addEventListener("click",function(){
+    if(!bfTarget) return;
+    bfSet((bfTarget.fl||bfAutoFloors(bfTarget))-1);
+  });
+  document.getElementById("bfPlus").addEventListener("click",function(){
+    if(!bfTarget) return;
+    bfSet((bfTarget.fl||bfAutoFloors(bfTarget))+1);
+  });
+  document.getElementById("bfAuto").addEventListener("click",function(){ bfSet(0); });
+  (function(){
+    var q=document.getElementById("bfQuick");
+    [2,3,5,10,15,20,30].forEach(function(k){
+      var b=document.createElement("button");
+      b.className="btn"; b.textContent=k+"층";
+      b.addEventListener("click",function(){ bfSet(k); });
+      q.appendChild(b);
+    });
+  })();
+  document.getElementById("bfClose").addEventListener("click",function(){
+    bldFloorsEl.hidden=true;
+    if(bfTarget&&(bfTarget.fl||0)!==bfBefore)
+      log("건물 층수: "+(bfTarget.fl?bfTarget.fl+"층":"자동"));
+    bfTarget=null;
   });
   document.getElementById("ciEdit").addEventListener("click",function(){
     chipInfoModal.hidden=true;
