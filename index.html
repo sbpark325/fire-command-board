@@ -946,6 +946,12 @@
     background:var(--bg2); border:1px solid var(--edge); border-radius:9px; padding:9px 11px}
   .ciSpec .k{color:var(--ink-lo); font-weight:700; white-space:nowrap}
   .ciSpec .v{font-weight:700}
+  /* 인원 수동 조정 스테퍼 (V2.71) */
+  .ciCntRow{display:flex; align-items:center; gap:10px; margin-top:2px}
+  .ciCntRow .k{font-size:12px; color:var(--ink-lo); font-weight:700}
+  .ciCntRow .btn{width:40px; padding:7px 0; text-align:center}
+  .ciCntRow b{font-size:14px; min-width:84px; text-align:center}
+  .ciCntRow small{color:var(--ink-lo); font-weight:600}
   .ciNote{font-size:12px; color:var(--ink-lo); line-height:1.5}
   .ciList{display:flex; flex-direction:column; gap:4px; font-size:12.5px; font-weight:600;
     background:var(--bg2); border:1px solid var(--edge); border-radius:9px; padding:9px 11px; line-height:1.5}
@@ -1080,7 +1086,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.70</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.71</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -3688,6 +3694,7 @@
     var chip=createChip(d.n,d.c);
     chip.dataset.mi=d.m||0;
     if(d.w) chip.dataset.crew=d.w;
+    if(d.wn!=null&&d.wn!=="") chip.dataset.crewN=d.wn;
     if(d.z==="lane"&&laneList.children[d.i]){
       laneList.children[d.i].querySelector(".laneBody").appendChild(chip);
     }else if(d.z==="plan"){
@@ -3964,6 +3971,32 @@
       var em=ciEl("div","ciCrew empty",'등록된 대원이 없습니다 — "말 편집"에서 명단을 적거나, 지령서 인식으로 채워집니다');
       sec.appendChild(em);
     }
+    /* 인원 수동 조정 (V2.71): −/+ 로 인원수를 직접 지정 — 대원 심볼·상단 집계에 반영 */
+    var cntRow=ciEl("div","ciCntRow");
+    cntRow.appendChild(ciEl("span","k","인원"));
+    var mBtn=ciEl("button","btn","−");
+    var cntEl=document.createElement("b");
+    var pBtn=ciEl("button","btn","+");
+    function renderCnt(){
+      var manual=chip.dataset.crewN!=null&&chip.dataset.crewN!=="";
+      cntEl.textContent="";
+      cntEl.appendChild(document.createTextNode(crewCount(chip)+"명 "));
+      var sm=document.createElement("small");
+      sm.textContent=manual?"(수동)":"(자동)";
+      cntEl.appendChild(sm);
+    }
+    function setCnt(d){
+      var n=crewCount(chip)+d;
+      if(n<0) n=0;
+      chip.dataset.crewN=String(n);
+      renderCnt(); refreshCounts(); scheduleSave();
+      log("인원 조정: "+chip.dataset.name+" → "+n+"명");
+    }
+    mBtn.addEventListener("click",function(){ setCnt(-1); });
+    pBtn.addEventListener("click",function(){ setCnt(1); });
+    cntRow.appendChild(mBtn); cntRow.appendChild(cntEl); cntRow.appendChild(pBtn);
+    renderCnt();
+    sec.appendChild(cntRow);
     ciBody.appendChild(sec);
     /* 2) 제원 */
     sec=ciEl("div","ciSec");
@@ -4042,6 +4075,8 @@
      평면도 말의 좌상단 배지(원터치) 또는 정보 카드의 "분대 배치" 버튼으로 생성 */
   /* 말의 대원 수: "탑승 n명"·"n명" 표기 우선, 없으면 명단 항목 수 (V2.65) */
   function crewCount(chip){
+    var mn=chip.dataset.crewN;   /* 수동 지정 인원이 있으면 우선 (V2.71) */
+    if(mn!=null&&mn!=="") return parseInt(mn,10)||0;
     var c=(chip.dataset.crew||"").trim();
     if(!c) return 0;
     var m=c.match(/(\d{1,2})\s*명/);
@@ -4186,6 +4221,7 @@
       var crew=chipCrew.value.trim();
       if(crew!==(editChip.dataset.crew||"")){
         if(crew) editChip.dataset.crew=crew; else delete editChip.dataset.crew;
+        delete editChip.dataset.crewN;   /* 명단을 새로 쓰면 수동 인원 해제 (V2.71) */
         log("대원 명단 갱신: "+name);
       }
     }else{
@@ -5383,6 +5419,7 @@
       var d={n:c.dataset.name, c:chipColor(c)};
       if(c.dataset.ts) d.t=+c.dataset.ts;
       if(c.dataset.crew) d.w=c.dataset.crew;
+      if(c.dataset.crewN!=null&&c.dataset.crewN!=="") d.wn=c.dataset.crewN;
       for(var k in extra) d[k]=extra[k];
       chips.push(d);
     }
