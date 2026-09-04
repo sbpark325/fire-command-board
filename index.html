@@ -1087,7 +1087,7 @@
 </style>
 
 <header class="topbar">
-  <div class="brand">현장지휘 보드<span class="proto">V 2.73</span></div>
+  <div class="brand">현장지휘 보드<span class="proto">V 2.74</span></div>
   <div class="incident" contenteditable="true" spellcheck="false" aria-label="사건명"></div>
   <span id="viewerBadge" role="button" title="이 기기의 권한 — 탭해서 보기 전용/편집 모드 전환"></span>
   <div class="clock" id="clock">--:--:--</div>
@@ -2419,18 +2419,28 @@
       updateMapUi(); scheduleSave();
       return;
     }
-    /* 최초 켜기: GPS로 기준점 설정 (거부/실패 시 울산 시내 기본) */
+    /* 최초 켜기(V2.74): GPS 응답을 기다리지 않고 즉시 켠다 — 권한 프롬프트·수신 지연 시
+       지도가 영영 안 뜨던 문제 수정. 기준점은 다른 지도 탭 것 재사용(같은 사건 현장) →
+       없으면 울산 기본. GPS는 백그라운드로 받아 화면 중심만 이동 */
     function setAnchor(lat,lng,src){
       geo={on:true, lat:lat, lng:lng}; geoO=null;
       log("지도 배경 켬 — 기준점: "+src);
       updateMapUi(); scheduleSave();
     }
-    if(navigator.geolocation){
+    syncMapState();
+    var srcGeo=null;
+    for(var gi=0;gi<maps.length;gi++){
+      var g=(gi===mi)?null:(maps[gi]&&maps[gi].geo);
+      if(g&&g.lat!=null){ srcGeo=g; break; }
+    }
+    if(srcGeo) setAnchor(srcGeo.lat, srcGeo.lng, "다른 지도 탭과 동일");
+    else setAnchor(35.5384, 129.3114, "기본(울산)");
+    centerOn(geo.lat, geo.lng);
+    if(!srcGeo&&navigator.geolocation){
       navigator.geolocation.getCurrentPosition(
-        function(p){ setAnchor(p.coords.latitude, p.coords.longitude, "현 위치(GPS)"); },
-        function(){ setAnchor(35.5384, 129.3114, "기본(울산)"); },
-        {enableHighAccuracy:true, timeout:6000});
-    }else setAnchor(35.5384, 129.3114, "기본(울산)");
+        function(p){ if(geo&&geo.on){ centerOn(p.coords.latitude, p.coords.longitude); log("지도 중심 이동: 현 위치(GPS)"); } },
+        function(){}, {enableHighAccuracy:true, timeout:6000});
+    }
   });
   gpsBtn.addEventListener("click",function(){
     if(!navigator.geolocation||!geo) return;
